@@ -135,7 +135,14 @@ Die Ollama-Modelle liegen in `/var/lib/ollama` (Pfad über `OLLAMA_DATA`
 - **Sonderregeln:** Das Modell hält Fähigkeiten einzelner Charaktere manchmal
   für allgemeine Regeln. Das Zitat in der Antwort macht das sichtbar; fehlt
   der Seitenlink darunter, ist das Zitat vermutlich frei formuliert.
-- **Bilder:** Regeln, die nur als Icon oder Bild im Heft stehen, fehlen.
+- **Bilder:** Symbole im Fließtext werden über die Symbol-Galerie benannt;
+  Symbolreihen am Zeilenende und Symbole in Tabellen ohne Linien erkennt sie
+  noch nicht zuverlässig. Regeln, die nur in Abbildungen stehen, fehlen.
 - **Seitenzahlen** sind PDF-Seiten, nicht unbedingt die aufgedruckten.
 - **Gleichzeitige Fragen** werden nacheinander beantwortet; bei 3 Tischen
   gleichzeitig dauert die letzte Antwort ~10 s.
+
+## Lizenz
+
+GPL-3.0, siehe [LICENSE](LICENSE). Regelhefte gehören nicht zum Projekt und
+sind nicht im Repository – sie unterliegen dem Urheberrecht ihrer Verlage.
