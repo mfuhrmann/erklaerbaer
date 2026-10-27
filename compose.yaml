@@ -21,7 +21,8 @@ services:
       # follow-up history and the answer.
       OLLAMA_CONTEXT_LENGTH: ${KONTEXT_TOKENS:-40960}
       OLLAMA_FLASH_ATTENTION: "1"
-      OLLAMA_KV_CACHE_TYPE: q8_0
+      # Precision of the per-token cache: q8_0 (~52 KB/token) or q4_0 (about half).
+      OLLAMA_KV_CACHE_TYPE: ${KV_CACHE_TYPE:-q8_0}
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_MODELS: /models
       # Prompt cache of llama-server (MiB): how many rulebooks stay read in.
@@ -46,7 +47,7 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "qwen3:30b-a3b-instruct-2507-q4_K_M"]
+    entrypoint: ["ollama", "pull", "${ERKLAERBAER_MODELL:-gemma4:e4b}"]
     restart: "no"
 
   # One-shot: download the whisper model unless it is there already.
@@ -87,6 +88,10 @@ services:
       WHISPER_URL: http://whisper:8080
       # For importing rulebooks from the web page.
       DOCLING_URL: http://docling:5001
+      # LLM; qwen3:30b-a3b-instruct-2507-q4_K_M is the more careful, bigger alternative.
+      ERKLAERBAER_MODELL: ${ERKLAERBAER_MODELL:-gemma4:e4b}
+      # Cache per token of that model (KB), decides how many rulebooks are warmed.
+      CACHE_KB_PRO_TOKEN: ${CACHE_KB_PRO_TOKEN:-11}
       # Must match LLAMA_ARG_CACHE_RAM above; decides how many rulebooks are warmed.
       CACHE_RAM_MIB: ${CACHE_RAM_MIB:-12288}
       # gross | alle | keine | liste (regelwerke/vorwaermen.txt)

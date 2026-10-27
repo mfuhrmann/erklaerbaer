@@ -3,11 +3,28 @@
 Usage: python3 tools/ask.py RULEBOOK.md "Frage 1" ["Frage 2" ...]
 """
 import json
+import os
 import sys
 import urllib.request
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
-MODEL = "qwen3:30b-a3b-instruct-2507-q4_K_M"
+# Gemma 4 e4b: 55/56 vs 56/56 for qwen3:30b-a3b-instruct-2507-q4_K_M on 28 rule
+# questions, but twice as fast and a quarter of the memory (NOTIZEN.md).
+MODEL = os.environ.get("ERKLAERBAER_MODELL", "gemma4:e4b")
+
+
+def can_think(ollama, model):
+    """Whether the model thinks before answering (Gemma 4) and so needs think=false.
+
+    Models without thinking reject the option, so ask Ollama instead of always sending it.
+    """
+    request = urllib.request.Request(f"{ollama}/api/show", data=json.dumps({"model": model}).encode(),
+                                     headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return "thinking" in json.load(response).get("capabilities", [])
+    except OSError:
+        return False
 
 SYSTEM_PROMPT = """Du bist ein Regel-Schiedsrichter für Brettspiele.
 Beantworte Fragen ausschließlich anhand des folgenden Regelwerks.
@@ -36,6 +53,7 @@ Beantworte Fragen ausschließlich anhand des folgenden Regelwerks.
 def ask(rules, question):
     payload = {
         "model": MODEL,
+        **({"think": False} if THINKS else {}),
         "stream": False,
         "keep_alive": "30m",
         # Recommended Qwen3 instruct sampling; the token limit stops the
@@ -55,7 +73,12 @@ def ask(rules, question):
         return json.load(response)
 
 
+THINKS = None
+
+
 def main():
+    global THINKS
+    THINKS = can_think(OLLAMA_URL.rsplit("/api/", 1)[0], MODEL)
     with open(sys.argv[1], encoding="utf-8") as f:
         rules = f.read()
     for question in sys.argv[2:]:

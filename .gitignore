@@ -9,6 +9,8 @@
 /openwebui/
 *.wav
 /tools/symbol-experimente/*.pdf
+# Test results quote the rulebooks
+/tools/symbol-experimente/*.json
 installiert.txt
 
 # Machine-specific settings (see .env.example) and personal notes

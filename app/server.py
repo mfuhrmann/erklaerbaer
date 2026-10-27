@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from tools.ask import MODEL, SYSTEM_PROMPT  # noqa: E402
+from tools.ask import MODEL, SYSTEM_PROMPT, can_think  # noqa: E402
 from tools.check_coverage import page_count, page_text, words  # noqa: E402
 from tools import symbole  # noqa: E402
 
@@ -38,8 +38,9 @@ OPTIONS = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "num_predict": 1024}
 
 # Prompt cache of llama-server, same value as LLAMA_ARG_CACHE_RAM in compose.yaml.
 CACHE_RAM_MIB = int(os.environ.get("CACHE_RAM_MIB", "8192"))
-# Measured with q8_0 KV cache: 12288 MiB hold ~246,000 tokens.
-CACHE_BYTES_PER_TOKEN = 52_000
+# Cache per token, depends on the model: qwen3:30b-a3b 52 KB (q8_0 KV),
+# gemma4:e4b 10.5 KB (q8_0 KV; it keeps most layers' attention local).
+CACHE_BYTES_PER_TOKEN = int(float(os.environ.get("CACHE_KB_PRO_TOKEN", "52")) * 1000)
 # "gross": largest rulebooks that fit the cache, "alle", "keine",
 # or "liste": the game ids in regelwerke/vorwaermen.txt (one per line).
 WARM_MODE = os.environ.get("VORWAERMEN", "gross")
@@ -106,6 +107,7 @@ def load_games():
 
 
 GAMES = load_games()
+THINKS = can_think(OLLAMA_URL, MODEL)
 app = FastAPI(title="Erklärbär")
 
 
@@ -119,6 +121,7 @@ def chat_payload(game, question, stream, options=OPTIONS, history=()):
     messages.append({"role": "user", "content": question})
     return {
         "model": MODEL,
+        **({"think": False} if THINKS else {}),
         "stream": stream,
         "keep_alive": -1,
         "options": options,
@@ -177,28 +180,51 @@ async def warm(client, game):
         print(f"vorwärmen unterbrochen: {game['name']}", flush=True)
 
 
+# Ids of the rulebooks kept warm; imports add to it (warm_imported).
+warm_ids = []
+
+
+async def warm_and_report(client, game_id):
+    started = time.time()
+    await warm(client, GAMES[game_id])
+    print(f"vorgewärmt: {GAMES[game_id]['name']} ({time.time() - started:.0f} s)", flush=True)
+
+
 @app.on_event("startup")
 async def warm_up():
     """Keep the chosen rulebooks in Ollama's cache before guests ask."""
     chosen = games_to_warm()
+    warm_ids.extend(g["id"] for g in chosen)
     print(f"vorwärmen ({WARM_MODE}): {len(chosen)} von {len(GAMES)} Spielen, "
           f"~{sum(g['tokens'] for g in chosen)} Tokens, Cache {CACHE_RAM_MIB} MiB", flush=True)
 
     async def run():
         async with httpx.AsyncClient(timeout=600) as client:
-            for game in chosen:
-                started = time.time()
-                await warm(client, game)
-                print(f"vorgewärmt: {game['name']} ({time.time() - started:.0f} s)", flush=True)
+            for game_id in list(warm_ids):
+                await warm_and_report(client, game_id)
             # Touching a rulebook that is still cached takes about a second.
-            while chosen:
+            while warm_ids:
                 await asyncio.sleep(REFRESH_SECONDS)
                 if time.time() - last_question < REFRESH_SECONDS:
                     continue
-                for game in chosen:
-                    await warm(client, game)
+                for game_id in list(warm_ids):
+                    await warm(client, GAMES[game_id])
 
     asyncio.create_task(run())
+
+
+async def warm_imported(game_id):
+    """A rulebook imported (or converted again) while running: read it in now,
+    so the first question is quick, and keep it warm from then on."""
+    if WARM_MODE == "keine":
+        return
+    if game_id not in warm_ids:
+        budget = CACHE_RAM_MIB * 1024 * 1024 * 0.9 / CACHE_BYTES_PER_TOKEN
+        if sum(GAMES[i]["tokens"] for i in warm_ids) + GAMES[game_id]["tokens"] > budget and WARM_MODE != "alle":
+            return
+        warm_ids.append(game_id)
+    async with httpx.AsyncClient(timeout=600) as client:
+        await warm_and_report(client, game_id)
 
 
 @app.get("/api/games")
@@ -347,6 +373,7 @@ async def convert(job, game_id, name, pdf, ocr=False, new=True):
         GAMES[game_id] = load_game(RULES_DIR / f"{game_id}.md", names)
         print(f"importiert: {name} ({output.splitlines()[-1]})", flush=True)
         imports[job].update(status="fertig", message=output.splitlines()[-1])
+    asyncio.create_task(warm_imported(game_id))
 
 
 async def run_import(job, game_id, name, pdf):

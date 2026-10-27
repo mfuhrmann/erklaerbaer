@@ -9,15 +9,20 @@ Läuft komplett offline auf einem Laptop – gedacht für Spieleevents.
 ## Schnellstart
 
 ```bash
+cp .env.example .env                       # einmalig; UID/GID anpassen (id -u, id -g)
 docker compose up -d                       # Erklärbär auf http://localhost:8090
-docker compose --profile werkzeuge up -d   # zusätzlich Open WebUI und Docling
+docker compose --profile werkzeuge up -d   # zusätzlich Open WebUI zum Testen
 docker compose --profile werkzeuge down    # alles stoppen
 docker compose logs -f erklaerbaer         # Logs ansehen
 ```
 
-Beim ersten Start werden die Modelle geladen (~18 GB LLM, ~0,6 GB Whisper).
-Danach liest der Erklärbär jedes Regelheft einmal ein („vorgewärmt“ im Log),
-damit die ersten Fragen der Gäste schnell beantwortet werden.
+Gebraucht werden Docker mit Zugriff auf die GPU (`/dev/dri`, Vulkan) und grob
+12–16 GB freier RAM (geschätzt; gemessen auf einem Laptop mit iGPU: ~20 GB
+belegt inklusive Desktop, alle ~90 Regelhefte vorgewärmt). Beim ersten Start werden die Modelle geladen (~6,6 GB LLM,
+~0,6 GB Whisper). Danach liest der Erklärbär die Regelhefte einmal ein
+(„vorgewärmt“ im Log), damit auch die ersten Fragen der Gäste schnell
+beantwortet werden. Regelhefte bringt jeder selbst mit (siehe unten) – im
+Repository sind keine.
 
 ## Neues Spiel hinzufügen
 
@@ -61,18 +66,19 @@ python3 tools/ask.py regelwerke/flip-7.md "Wie gewinnt man?" "Was passiert bei G
 ```
 Handy/Browser ──► erklaerbaer (FastAPI, :8090)
                     ├─ Sprache ──► whisper (whisper.cpp, Vulkan)
-                    └─ Frage + ganzes Regelheft ──► ollama (Qwen3 30B, Vulkan)
+                    └─ Frage + ganzes Regelheft ──► ollama (Gemma 4 e4b, Vulkan)
 ```
 
 - **Kein RAG:** Pro Frage kommt das komplette Regelheft des gewählten Spiels in
-  den Kontext (typisch 4–8k Tokens). Regelfragen hängen oft an mehreren
+  den Kontext (typisch 4–8k Tokens, die größten ~30k). Regelfragen hängen oft an mehreren
   verstreuten Stellen, die eine Suche verfehlen würde.
-- **Cache:** Ollama hält eingelesene Regelhefte im Speicher (~52 KB pro Token,
-  ein typisches Heft 5k Tokens ≈ 250 MB). Einlesen kostet überproportional
-  mit der Größe: Quoridor (1k Tokens) 3 s, Abomination (21k Tokens) 166 s;
-  danach antwortet ein Spiel in 2–12 s.
+- **Cache:** Ollama hält eingelesene Regelhefte im Speicher (mit Gemma 4 e4b
+  ~11 KB pro Token, ein typisches Heft mit 5k Tokens ≈ 55 MB). Das Einlesen
+  ist der teure Teil (~245 Tokens/s, ein großes Heft mit 20k Tokens ~80 s);
+  liegt ein Heft im Cache, kommt die Antwort in ~2 s.
 - **Vorwärmen:** Beim Start liest die App die größten Regelhefte ein, die in
-  den Cache passen; kleine liest Ollama bei Bedarf in Sekunden. Fragen von
+  den Cache passen (mit Gemma 4 e4b passen ~90 Hefte locker hinein); neu
+  importierte Spiele werden direkt nach dem Import eingelesen. Fragen von
   Gästen unterbrechen das Vorwärmen (Ollama bearbeitet nur eine Anfrage
   gleichzeitig). Ist eine Weile niemand aktiv, frischt die App die
   vorgewärmten Hefte auf, damit verdrängte wieder im Cache sind.
@@ -83,11 +89,17 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
   | `CACHE_RAM_MIB` | 12288 | Prompt-Cache von llama-server in MiB; mehr RAM → mehr Spiele vorgewärmt |
   | `VORWAERMEN` | `gross` | `gross`, `alle`, `keine` oder `liste` (`regelwerke/vorwaermen.txt`, eine Spiel-ID pro Zeile) |
   | `VORWAERMEN_PAUSE` | 300 | Sekunden ohne Fragen, bis vorgewärmte Hefte aufgefrischt werden |
+  | `ERKLAERBAER_MODELL` | gemma4:e4b | Sprachmodell (Alternative: qwen3:30b-a3b-instruct-2507-q4_K_M) |
+  | `CACHE_KB_PRO_TOKEN` | 11 | Cache pro Token des Modells (gemma4:e4b 11, qwen3 52) |
+  | `KV_CACHE_TYPE` | q8_0 | Genauigkeit des Caches; q4_0 halbiert ihn, liest ~30 % langsamer ein |
   | `KONTEXT_TOKENS` | 40960 | Kontextfenster; muss größtes Regelheft (Star Trek ~31k Tokens) + Verlauf + Antwort fassen |
-- **Modell:** `qwen3:30b-a3b-instruct-2507-q4_K_M`. MoE-Modell, rechnet pro
-  Token nur ~3B Parameter, daher schnell auf der iGPU. Die Hybrid-Variante
-  `qwen3:30b-a3b` ist ungeeignet: Sie denkt trotz `think: false` laut und
-  läuft sich fest.
+- **Modell:** `gemma4:e4b` (Standard). Im Vergleich mit 28 Regelfragen aus 12
+  Heften 55/56 richtig gegenüber 56/56 für `qwen3:30b-a3b-instruct-2507-q4_K_M`,
+  aber doppelt so schnell (Einlesen ~245 statt ~123 Tokens/s, Antwort aus dem
+  Cache ~2 statt ~4 s) bei einem Viertel des Speichers und einem Fünftel des
+  Caches pro Token. Wechsel per `ERKLAERBAER_MODELL` und `CACHE_KB_PRO_TOKEN`
+  in `.env`. Gemmas „Denken“ schaltet die App ab (sie fragt Ollama, ob das
+  Modell denken kann).
 - **Seitenansicht:** Der Link unter einer Antwort öffnet die Regelheft-Seite als
   Bild mit gelb markiertem Zitat (`/seite`) – funktioniert auch auf Handys ohne
   PDF-Betrachter.
@@ -100,13 +112,19 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
 
 | Pfad | Inhalt |
 |---|---|
-| `app/server.py` | Backend: Spiele, Spracherkennung, Antworten, PDF-Seitensuche |
-| `app/static/index.html` | Oberfläche (Spielsuche, Sprechknopf, Antwort mit Zitat) |
-| `tools/neues-spiel.sh` | PDF → bereinigtes Markdown |
+| `app/server.py` | Backend: Spiele, Spracherkennung, Antworten, Import, Symbole, Seitenansicht, Vorwärmen |
+| `app/static/index.html` | Oberfläche: Spielliste, Fragen mit Verlauf, Import |
+| `app/static/seite.html` | Regelheft-Seite als Bild mit markiertem Zitat |
+| `app/static/symbole.html` | Galerie zum Benennen von Bildsymbolen |
+| `tools/neues-spiel.sh` | PDF mit Text → bereinigtes Markdown (Docling) |
+| `tools/ocr-spiel.sh`, `tools/ocr_md.py` | Scans / Schrift als Grafik → Markdown (tesseract) |
+| `tools/symbole.py` | Bildsymbole im Text finden und als unsichtbaren Text ins PDF schreiben |
 | `tools/clean_md.py` | Bereinigung (wiederholte Überschriften, Bild-Platzhalter) |
-| `tools/check_coverage.py` | findet Seiten, die Docling verloren hat |
-| `tools/ask.py` | System-Prompt und Kommandozeilen-Test |
-| `regelwerke/` | PDFs, bereinigtes Markdown (`*.md`), Docling-Rohausgabe (`*.docling.md`), `spiele.json` |
+| `tools/check_coverage.py` | findet Seiten (und Symbolnamen), die Docling verloren hat |
+| `tools/ask.py` | System-Prompt, Modellwahl und Kommandozeilen-Test |
+| `tools/symbol-experimente/` | Messskripte: Symbolerkennung, Modell- und Cache-Vergleich |
+| `regelwerke/` | Regelhefte (nicht im Repository), siehe `regelwerke/README.md` |
+| `sammlung/`, `bgg-sammlung.csv` | Spielesammlung (BGG-Export) und Liste noch fehlender Anleitungen |
 | `logs/fragen.jsonl` | alle gestellten Fragen mit Antwort und Dauer |
 | `models/` | Whisper-Modell |
 
@@ -124,9 +142,8 @@ Spiele direkt verlinken (z. B. für QR-Codes in der Schachtel):
 | docling | 127.0.0.1:5001 | PDF-Umwandlung (Import, `neues-spiel.sh`), ~1,7 GB RAM |
 
 Die Ollama-Modelle liegen in `/var/lib/ollama` (Pfad über `OLLAMA_DATA`
-änderbar). Das native Ollama-Paket ist installiert, aber deaktiviert:
-`sudo systemctl enable --now ollama` würde es wieder starten – dann vorher
-`docker compose down`, sonst kollidiert Port 11434.
+änderbar). Läuft auf dem Rechner zusätzlich ein natives Ollama, kollidiert es
+auf Port 11434 – eines von beiden abschalten.
 
 ## Bekannte Grenzen
 
@@ -139,8 +156,11 @@ Die Ollama-Modelle liegen in `/var/lib/ollama` (Pfad über `OLLAMA_DATA`
   Symbolreihen am Zeilenende und Symbole in Tabellen ohne Linien erkennt sie
   noch nicht zuverlässig. Regeln, die nur in Abbildungen stehen, fehlen.
 - **Seitenzahlen** sind PDF-Seiten, nicht unbedingt die aufgedruckten.
-- **Gleichzeitige Fragen** werden nacheinander beantwortet; bei 3 Tischen
-  gleichzeitig dauert die letzte Antwort ~10 s.
+- **Gleichzeitige Fragen** werden nacheinander beantwortet; bei mehreren
+  Tischen gleichzeitig wartet die letzte Frage auf die vorigen (je ~2 s).
+- **Modell:** Gemma 4 e4b unterscheidet ähnliche Regelstellen etwas weniger
+  sorgfältig als das größere Qwen3 30B (z. B. Ende eines Durchgangs vs. Ende
+  des Spiels); wer den RAM hat, kann per `.env` wechseln.
 
 ## Lizenz
 
