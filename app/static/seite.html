@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regelheft – Erklärbär</title>
+<style>
+  :root {
+    --bg: #faf6f0; --card: #ffffff; --text: #2b2118; --muted: #7a6a5a;
+    --accent: #b5652b; --accent-text: #ffffff; --border: #e6dccf;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1814; --card: #27211b; --text: #f1e9df; --muted: #a8998a;
+      --accent: #d98a4e; --accent-text: #1c1814; --border: #3a3129;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header {
+    position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  button, a.button {
+    flex: none; padding: 8px 12px; font: inherit; border: 2px solid var(--border); border-radius: 10px;
+    background: var(--card); color: var(--text); cursor: pointer; text-decoration: none;
+  }
+  button:disabled { opacity: .4; }
+  #title { flex: 1; min-width: 0; font-weight: 700; line-height: 1.2; }
+  #title small { display: block; font-weight: 400; color: var(--muted); }
+  #sheet { position: relative; max-width: 900px; margin: 0 auto; background: #fff; }
+  #sheet img { display: block; width: 100%; height: auto; }
+  .mark {
+    position: absolute; background: rgba(255, 210, 0, .35);
+    outline: 2px solid rgba(230, 160, 0, .9); border-radius: 3px; pointer-events: none;
+  }
+  nav { display: flex; justify-content: space-between; gap: 10px; padding: 12px; max-width: 900px; margin: 0 auto; }
+  .hint { color: var(--muted); font-size: .9rem; text-align: center; margin: 0 12px 16px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <button id="back">←</button>
+  <div id="title">Regelheft<small id="where"></small></div>
+</header>
+<div id="sheet"><img id="page" alt=""></div>
+<nav>
+  <button id="prev">← Seite</button>
+  <a id="pdf" class="button" target="_blank" rel="noopener">Ganzes PDF</a>
+  <button id="next">Seite →</button>
+</nav>
+<p class="hint" id="hint"></p>
+
+<script>
+// /seite?spiel=<id>&s=<page>&q=<quote>: one rulebook page as an image, the
+// quote from the answer highlighted on it. Zoom with two fingers.
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const game = params.get("spiel");
+const quote = params.get("q") || "";
+const quotePage = Number(params.get("s")) || 1;
+let page = quotePage;
+let pages = 1;
+
+async function show() {
+  $("where").textContent = `Seite ${page} von ${pages}`;
+  $("prev").disabled = page <= 1;
+  $("next").disabled = page >= pages;
+  document.querySelectorAll(".mark").forEach((m) => m.remove());
+  $("page").src = `/api/games/${game}/seite/${page}.jpg`;
+  const url = new URL(location);
+  url.searchParams.set("s", page);
+  history.replaceState(null, "", url);
+  if (!quote || page !== quotePage) {
+    $("hint").textContent = quote ? `Das Zitat steht auf Seite ${quotePage}.` : "";
+    return;
+  }
+  const { boxes } = await (await fetch(
+    `/api/games/${game}/seite/${page}/markierung?` + new URLSearchParams({ quote }))).json();
+  $("hint").textContent = boxes.length ? "Gelb markiert: die zitierte Stelle." : "";
+  for (const [x0, y0, x1, y1] of boxes) {
+    const m = document.createElement("div");
+    m.className = "mark";
+    // A little padding around the words.
+    Object.assign(m.style, {
+      left: `${x0 * 100 - 0.4}%`, top: `${y0 * 100 - 0.3}%`,
+      width: `${(x1 - x0) * 100 + 0.8}%`, height: `${(y1 - y0) * 100 + 0.6}%`,
+    });
+    $("sheet").append(m);
+  }
+  const first = document.querySelector(".mark");
+  if (first) $("page").decode().then(() => first.scrollIntoView({ block: "center" })).catch(() => {});
+}
+
+async function load() {
+  const games = await (await fetch("/api/games")).json();
+  const g = games.find((x) => x.id === game);
+  if (!g) { $("title").textContent = "Spiel nicht gefunden"; return; }
+  pages = g.seiten;
+  page = Math.min(Math.max(page, 1), pages);
+  $("title").firstChild.textContent = g.name;
+  document.title = `${g.name} – Regelheft`;
+  $("pdf").href = `/api/games/${game}/pdf`;
+  show();
+}
+
+$("prev").onclick = () => { page -= 1; show(); window.scrollTo(0, 0); };
+$("next").onclick = () => { page += 1; show(); window.scrollTo(0, 0); };
+// Opened from an answer in a new tab: close it, back to the answer. If the
+// browser refuses, go to the game instead.
+$("back").onclick = () => {
+  if (history.length > 1) { history.back(); return; }
+  window.close();
+  setTimeout(() => { location.href = `/?spiel=${encodeURIComponent(game)}`; }, 300);
+};
+load();
+</script>
+</body>
+</html>

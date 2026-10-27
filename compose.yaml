@@ -1,0 +1,128 @@
+# Erklärbär: local AI rule explainer for board games.
+#
+#   docker compose up -d                       # Erklärbär on http://<laptop-ip>:8090
+#   docker compose --profile werkzeuge up -d   # plus Open WebUI
+#
+# All GPU work (LLM, speech recognition) runs on the iGPU via Vulkan.
+
+x-gpu: &gpu
+  devices:
+    - /dev/dri:/dev/dri
+
+services:
+  ollama:
+    image: ollama/ollama:0.40.11
+    <<: *gpu
+    restart: unless-stopped
+    environment:
+      OLLAMA_VULKAN: "1"
+      OLLAMA_IGPU_ENABLE: "1"
+      # Largest rulebooks (Star Trek, Too Many Bones) are ~31k tokens, plus
+      # follow-up history and the answer.
+      OLLAMA_CONTEXT_LENGTH: ${KONTEXT_TOKENS:-40960}
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_MODELS: /models
+      # Prompt cache of llama-server (MiB): how many rulebooks stay read in.
+      # Ollama passes LLAMA_ARG_* through; llama-server's default is 8192.
+      LLAMA_ARG_CACHE_RAM: ${CACHE_RAM_MIB:-12288}
+    volumes:
+      # Models already downloaded by the former native Ollama install.
+      - ${OLLAMA_DATA:-/var/lib/ollama}:/models
+    ports:
+      # Only for tools/ask.py on the laptop itself.
+      - 127.0.0.1:11434:11434
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      retries: 12
+
+  # One-shot: download the LLM unless it is there already.
+  modelle:
+    image: ollama/ollama:0.40.11
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "qwen3:30b-a3b-instruct-2507-q4_K_M"]
+    restart: "no"
+
+  # One-shot: download the whisper model unless it is there already.
+  whisper-modell:
+    image: curlimages/curl:8.11.1
+    user: "1000:1000"
+    volumes:
+      - ./models:/models
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        test -f /models/ggml-large-v3-turbo-q5_0.bin ||
+        curl -fL -o /models/ggml-large-v3-turbo-q5_0.bin
+        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
+    restart: "no"
+
+  whisper:
+    image: ghcr.io/ggml-org/whisper.cpp:main-vulkan
+    <<: *gpu
+    restart: unless-stopped
+    depends_on:
+      whisper-modell:
+        condition: service_completed_successfully
+    volumes:
+      - ./models:/models:ro
+    command: >
+      whisper-server -m /models/ggml-large-v3-turbo-q5_0.bin
+      --host 0.0.0.0 --port 8080 -l de
+
+  erklaerbaer:
+    build: .
+    restart: unless-stopped
+    # Imported rulebooks belong to the laptop user, not root.
+    user: "${ERKLAERBAER_UID:-1000}:${ERKLAERBAER_GID:-1000}"
+    depends_on: [ollama, whisper, docling]
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      WHISPER_URL: http://whisper:8080
+      # For importing rulebooks from the web page.
+      DOCLING_URL: http://docling:5001
+      # Must match LLAMA_ARG_CACHE_RAM above; decides how many rulebooks are warmed.
+      CACHE_RAM_MIB: ${CACHE_RAM_MIB:-12288}
+      # gross | alle | keine | liste (regelwerke/vorwaermen.txt)
+      VORWAERMEN: ${VORWAERMEN:-gross}
+      VORWAERMEN_PAUSE: ${VORWAERMEN_PAUSE:-300}
+    volumes:
+      # Writable: imported rulebooks are stored here.
+      - ./regelwerke:/srv/regelwerke
+      - ./logs:/srv/logs
+    ports:
+      - 8090:8090
+
+  # Converts rulebook PDFs (import on the web page, tools/neues-spiel.sh).
+  docling:
+    image: quay.io/docling-project/docling-serve-cpu:latest
+    restart: unless-stopped
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "true"
+    ports:
+      - 127.0.0.1:5001:5001
+
+  # --- Tools for preparing rulebooks and testing (profile "werkzeuge") ---
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    profiles: [werkzeuge]
+    restart: unless-stopped
+    depends_on: [ollama]
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - open-webui:/app/backend/data
+    ports:
+      - 127.0.0.1:3080:8080
+
+volumes:
+  open-webui:
+    # Keeps the account and settings of the Open WebUI started by hand.
+    external: true

@@ -1,0 +1,6 @@
+.venv
+regelwerke
+models
+logs
+*.wav
+openwebui

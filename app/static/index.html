@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Erklärbär</title>
+<style>
+  :root {
+    --bg: #faf6f0; --card: #ffffff; --text: #2b2118; --muted: #7a6a5a;
+    --accent: #b5652b; --accent-text: #ffffff; --border: #e6dccf;
+    --quote-bg: #f3ece2; --rec: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1814; --card: #27211b; --text: #f1e9df; --muted: #a8998a;
+      --accent: #d98a4e; --accent-text: #1c1814; --border: #3a3129;
+      --quote-bg: #2f2821; --rec: #e74c3c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 17px/1.5 system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.6rem; margin: 8px 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .hint { color: var(--muted); font-size: .95rem; margin: 6px 0; }
+  a { color: var(--accent); }
+  input {
+    flex: 1; min-width: 0; padding: 12px; font: inherit;
+    border: 2px solid var(--border); border-radius: 10px;
+    background: var(--card); color: var(--text);
+  }
+  button.primary {
+    padding: 12px 16px; font: inherit; border: none; border-radius: 10px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  button:disabled { opacity: .5; }
+
+  /* --- Step 1: pick a game --- */
+  #search { width: 100%; position: sticky; top: 8px; z-index: 1; }
+  .label { font-size: .85rem; font-weight: 700; color: var(--muted); margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 12px; border: 2px solid var(--border); border-radius: 999px;
+    background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+  }
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .game {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 12px 14px; border: 2px solid var(--border); border-radius: 10px;
+    background: var(--card); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  }
+  .lang {
+    flex: none; font-size: .7rem; font-weight: 700; padding: 1px 5px;
+    border: 1px solid var(--muted); border-radius: 4px; color: var(--muted);
+  }
+  #import { margin-top: 32px; }
+  #import summary { color: var(--accent); cursor: pointer; }
+  #importform { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+  /* --- Step 2: ask --- */
+  #ask { display: none; }
+  .bar { display: flex; align-items: center; gap: 10px; margin: 4px 0 4px; }
+  #back {
+    flex: none; padding: 8px 12px; font: inherit; border: 2px solid var(--border);
+    border-radius: 10px; background: var(--card); color: var(--text); cursor: pointer;
+  }
+  #title { font-size: 1.35rem; margin: 0; line-height: 1.25; }
+  #meta { margin: 0 0 14px; }
+  #askform { display: flex; gap: 8px; }
+  #talk {
+    width: 100%; margin-top: 10px; padding: 16px; border: none; border-radius: 12px;
+    background: var(--quote-bg); color: var(--text); font: inherit; font-weight: 600;
+    touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
+  }
+  #talk.recording { background: var(--rec); color: #fff; }
+  #examples { margin-top: 14px; }
+  #status { color: var(--muted); min-height: 1.5em; margin: 12px 0 4px; }
+  .turn { border-top: 1px solid var(--border); padding: 14px 0 6px; }
+  .question { font-weight: 700; margin: 0 0 6px; }
+  .answer { white-space: pre-wrap; margin: 0 0 8px; }
+  .quote {
+    background: var(--quote-bg); border-left: 4px solid var(--accent);
+    padding: 10px 12px; border-radius: 6px; font-size: .95rem; white-space: pre-wrap;
+  }
+  .source { display: inline-block; margin-top: 8px; font-size: .95rem; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 32px; }
+</style>
+</head>
+<body>
+<main>
+  <section id="pick">
+    <h1>🐻 Erklärbär</h1>
+    <p class="sub">Für welches Spiel brauchst du eine Regel?</p>
+    <input id="search" type="search" placeholder="🔍 Spiel suchen …" autocomplete="off">
+    <div id="recentbox">
+      <p class="label">Zuletzt gewählt</p>
+      <div class="chips" id="recent"></div>
+    </div>
+    <p class="label" id="listlabel"></p>
+    <div class="list" id="games"></div>
+
+    <details id="import">
+      <summary>➕ Anleitung importieren</summary>
+      <form id="importform">
+        <input id="importname" placeholder="Name des Spiels" autocomplete="off" required>
+        <input id="importfile" type="file" accept=".pdf,application/pdf" required>
+        <button class="primary">Hochladen</button>
+      </form>
+      <p class="hint" id="importstatus">PDF der Spielanleitung, am besten deutsch. Das Umwandeln dauert je nach Heft 10 s bis einige Minuten.</p>
+    </details>
+  </section>
+
+  <section id="ask">
+    <div class="bar">
+      <button id="back">← Spiele</button>
+      <h2 id="title"></h2>
+    </div>
+    <p class="hint" id="meta"></p>
+
+    <form id="askform">
+      <input id="text" placeholder="Deine Regelfrage …" autocomplete="off" enterkeyhint="send">
+      <button class="primary">Fragen</button>
+    </form>
+    <button id="talk" hidden>🎤 Gedrückt halten und sprechen</button>
+    <div id="examples">
+      <p class="label">Zum Beispiel</p>
+      <div class="chips"></div>
+    </div>
+    <p id="status"></p>
+    <div id="turns"></div>
+  </section>
+
+  <footer>KI-Erklärer – kann sich irren. Im Zweifel gilt das Regelheft.</footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let game = null;
+let busy = false;
+// Last questions and answers for the selected game, for follow-up questions.
+let history = [];
+let allGames = [];
+
+const EXAMPLES = ["Wie gewinnt man?", "Wie läuft ein Zug ab?", "Wie wird das Spiel aufgebaut?", "Wann endet das Spiel?"];
+
+// --- Step 1: pick a game. A link like /?spiel=colt-express (e.g. from a QR
+// code in the box) opens the game directly.
+
+function recentIds() {
+  try { return JSON.parse(localStorage.getItem("recent") || "[]"); } catch { return []; }
+}
+
+function remember(id) {
+  const ids = [id, ...recentIds().filter((x) => x !== id)].slice(0, 6);
+  try { localStorage.setItem("recent", JSON.stringify(ids)); } catch {}
+}
+
+// "Größe" matches "grosse", "Café" matches "cafe".
+const normalize = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss");
+
+function gameButton(g, className) {
+  const b = document.createElement("button");
+  b.className = className;
+  const name = document.createElement("span");
+  name.textContent = g.name;
+  b.append(name);
+  if (g.lang === "en") {
+    const tag = document.createElement("span");
+    tag.className = "lang";
+    tag.title = "Regelheft auf Englisch";
+    tag.textContent = "EN";
+    b.append(tag);
+  }
+  b.onclick = () => openGame(g.id);
+  return b;
+}
+
+function renderGames() {
+  const query = normalize($("search").value.trim());
+  const shown = query ? allGames.filter((g) => normalize(g.name).includes(query)) : allGames;
+  const recent = recentIds().map((id) => allGames.find((g) => g.id === id)).filter(Boolean);
+  $("recentbox").hidden = Boolean(query) || !recent.length;
+  $("recent").replaceChildren(...recent.map((g) => gameButton(g, "chip")));
+  $("listlabel").textContent = query
+    ? (shown.length ? `${shown.length} Treffer` : "Kein Spiel gefunden")
+    : `Alle ${allGames.length} Spiele`;
+  $("games").replaceChildren(...shown.map((g) => gameButton(g, "game")));
+}
+
+// --- Switching between the two steps; the phone's back button returns to the list.
+
+function showStep(id) {
+  game = id;
+  $("pick").style.display = id ? "none" : "block";
+  $("ask").style.display = id ? "block" : "none";
+  if (!id) {
+    renderGames();
+    return;
+  }
+  const g = allGames.find((x) => x.id === id);
+  $("title").textContent = g.name;
+  const meta = [];
+  if (g.pdf) meta.push(`<a href="/seite?spiel=${encodeURIComponent(id)}&s=1" target="_blank" rel="noopener">📄 Regelheft ansehen</a>`);
+  if (g.lang === "en") meta.push("Regelheft auf Englisch – Antworten kommen trotzdem auf Deutsch.");
+  if (g.pdf) meta.push(`<a href="/symbole?spiel=${encodeURIComponent(id)}">🔣 Symbole</a>`);
+  $("meta").innerHTML = meta.join(" · ");
+  $("turns").replaceChildren();
+  $("status").textContent = "";
+  $("examples").hidden = false;
+  history = [];
+  window.scrollTo(0, 0);
+}
+
+function openGame(id) {
+  remember(id);
+  $("search").value = "";
+  window.history.pushState({ spiel: id }, "", `?spiel=${encodeURIComponent(id)}`);
+  showStep(id);
+  $("text").focus();
+}
+
+window.addEventListener("popstate", (e) => showStep(e.state?.spiel || null));
+$("back").onclick = () => {
+  if (window.history.state?.spiel) window.history.back();
+  else { window.history.replaceState(null, "", location.pathname); showStep(null); }
+};
+
+async function loadGames() {
+  allGames = await (await fetch("/api/games")).json();
+  allGames.sort((a, b) => a.name.localeCompare(b.name, "de"));
+  const fromLink = new URLSearchParams(location.search).get("spiel");
+  if (allGames.some((g) => g.id === fromLink)) {
+    remember(fromLink);
+    showStep(fromLink);
+  } else {
+    showStep(null);
+  }
+}
+
+$("search").addEventListener("input", renderGames);
+
+// --- Import: upload a rulebook PDF; the server converts it in the background.
+
+$("importform").onsubmit = async (e) => {
+  e.preventDefault();
+  const form = new FormData();
+  form.append("name", $("importname").value);
+  form.append("pdf", $("importfile").files[0]);
+  const button = $("importform").querySelector("button");
+  button.disabled = true;
+  $("importstatus").textContent = "Lade hoch …";
+  try {
+    const response = await fetch("/api/import", { method: "POST", body: form });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail);
+    const started = Date.now();
+    while (true) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const job = await (await fetch(`/api/import/${result.job}`)).json();
+      const seconds = Math.round((Date.now() - started) / 1000);
+      if (job.status === "fertig") {
+        $("importstatus").textContent = `✅ Fertig – das Spiel ist jetzt in der Liste.`;
+        $("importform").reset();
+        await loadGames();
+        openGame(result.game);
+        break;
+      }
+      if (job.status === "fehler") throw new Error(job.message);
+      if (job.status === "symbole") {
+        location.href = `/symbole?spiel=${encodeURIComponent(result.game)}`;
+        break;
+      }
+      $("importstatus").textContent = job.status === "wartet"
+        ? "Wartet auf einen anderen Import …"
+        : `Wandle um … ${seconds} s ${job.message ? "– " + job.message : ""}`;
+    }
+  } catch (err) {
+    $("importstatus").textContent = `❌ ${err.message}`;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+// --- Recording: record with MediaRecorder, convert to 16 kHz mono WAV for whisper.
+// Browsers only allow the microphone on HTTPS (or on the laptop itself).
+
+const canRecord = window.isSecureContext && navigator.mediaDevices && window.MediaRecorder;
+$("talk").hidden = !canRecord;
+
+let recorder = null;
+let chunks = [];
+// The button may be released while getUserMedia is still pending.
+let held = false;
+
+async function startRecording() {
+  held = true;
+  if (busy || recorder) return;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    $("status").textContent = "Kein Mikrofonzugriff – bitte Frage eintippen.";
+    return;
+  }
+  chunks = [];
+  recorder = new MediaRecorder(stream);
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach((t) => t.stop());
+    const blob = new Blob(chunks, { type: recorder.mimeType });
+    recorder = null;
+    $("talk").classList.remove("recording");
+    $("talk").textContent = "🎤 Gedrückt halten und sprechen";
+    transcribe(blob);
+  };
+  recorder.start();
+  $("talk").classList.add("recording");
+  $("talk").textContent = "🔴 Ich höre zu … loslassen zum Senden";
+  if (!held) stopRecording();
+}
+
+function stopRecording() {
+  held = false;
+  if (recorder && recorder.state === "recording") recorder.stop();
+}
+
+async function toWav(blob) {
+  const decoded = await new AudioContext().decodeAudioData(await blob.arrayBuffer());
+  const rate = 16000;
+  const offline = new OfflineAudioContext(1, Math.ceil(decoded.duration * rate), rate);
+  const src = offline.createBufferSource();
+  src.buffer = decoded;
+  src.connect(offline.destination);
+  src.start();
+  const samples = (await offline.startRendering()).getChannelData(0);
+
+  const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
+  const text = (o, s) => [...s].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+  text(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); text(8, "WAVE");
+  text(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true); view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  text(36, "data"); view.setUint32(40, samples.length * 2, true);
+  samples.forEach((s, i) => view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, s)) * 0x7fff, true));
+  return new Blob([view], { type: "audio/wav" });
+}
+
+async function transcribe(blob) {
+  busy = true;
+  $("talk").disabled = true;
+  $("status").textContent = "Verstehe die Frage …";
+  try {
+    const form = new FormData();
+    form.append("audio", await toWav(blob), "frage.wav");
+    form.append("game", game);
+    const { text } = await (await fetch("/api/transcribe", { method: "POST", body: form })).json();
+    if (!text) {
+      $("status").textContent = "Nichts verstanden – bitte nochmal.";
+      return;
+    }
+    await ask(text);
+  } catch {
+    $("status").textContent = "Fehler bei der Spracherkennung – bitte Frage eintippen.";
+  } finally {
+    busy = false;
+    $("talk").disabled = false;
+  }
+}
+
+// --- Asking: stream the answer into a new entry of the conversation, then
+// split "Antwort:" and "Regel:" apart.
+
+async function ask(question) {
+  busy = true;
+  $("examples").hidden = true;
+  $("askform").querySelector("button").disabled = true;
+  const turn = document.createElement("div");
+  turn.className = "turn";
+  turn.innerHTML = '<p class="question"></p><p class="answer"></p><div class="quote" hidden></div>';
+  turn.querySelector(".question").textContent = question;
+  $("turns").prepend(turn);
+
+  // The first question to a game reads the whole rulebook and takes longer.
+  const started = Date.now();
+  const waiting = setInterval(() => {
+    const s = Math.round((Date.now() - started) / 1000);
+    $("status").textContent = `Blättere im Regelheft … ${s} s` + (s >= 8 ? " – beim ersten Mal dauert es länger" : "");
+  }, 1000);
+  $("status").textContent = "Blättere im Regelheft …";
+  try {
+    const response = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game, question, history }),
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      full += decoder.decode(value, { stream: true });
+      clearInterval(waiting);
+      $("status").textContent = "";
+      show(turn, full);
+    }
+    history = [...history, { question, answer: full }].slice(-2);
+    linkSource(turn, full);
+  } catch {
+    $("status").textContent = "Keine Antwort erhalten – bitte nochmal versuchen.";
+  } finally {
+    clearInterval(waiting);
+    busy = false;
+    $("askform").querySelector("button").disabled = false;
+  }
+}
+
+// Link the quote to the PDF page it comes from, so players can check it.
+async function linkSource(turn, text) {
+  const match = text.match(/Regel:\s*"?([\s\S]*?)"?\s*(\(Abschnitt|$)/);
+  if (!match || !allGames.find((g) => g.id === game).pdf) return;
+  const params = new URLSearchParams({ quote: match[1] });
+  try {
+    const { page } = await (await fetch(`/api/games/${game}/page?${params}`)).json();
+    if (!page) return;
+    const a = document.createElement("a");
+    a.className = "source";
+    a.href = "/seite?" + new URLSearchParams({ spiel: game, s: page, q: match[1] });
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = `📄 Im Regelheft nachlesen (S. ${page})`;
+    turn.append(a);
+  } catch {}
+}
+
+function show(turn, text) {
+  const i = text.indexOf("Regel:");
+  const answer = (i >= 0 ? text.slice(0, i) : text).replace(/^\s*Antwort:\s*/, "");
+  turn.querySelector(".answer").textContent = answer.trim();
+  if (i >= 0) {
+    const quote = turn.querySelector(".quote");
+    quote.hidden = false;
+    quote.textContent = "📖 " + text.slice(i + 6).trim();
+  }
+}
+
+const talk = $("talk");
+talk.addEventListener("pointerdown", (e) => { e.preventDefault(); startRecording(); });
+talk.addEventListener("pointerup", stopRecording);
+talk.addEventListener("pointerleave", stopRecording);
+talk.addEventListener("pointercancel", stopRecording);
+talk.addEventListener("contextmenu", (e) => e.preventDefault());
+
+$("examples").querySelector(".chips").replaceChildren(...EXAMPLES.map((q) => {
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.textContent = q;
+  b.onclick = () => { if (!busy) ask(q); };
+  return b;
+}));
+
+$("askform").onsubmit = (e) => {
+  e.preventDefault();
+  const q = $("text").value.trim();
+  if (q && !busy) { $("text").value = ""; ask(q); }
+};
+
+loadGames();
+</script>
+</body>
+</html>

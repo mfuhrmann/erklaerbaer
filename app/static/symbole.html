@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Symbole benennen – Erklärbär</title>
+<style>
+  :root {
+    --bg: #faf6f0; --card: #ffffff; --text: #2b2118; --muted: #7a6a5a;
+    --accent: #b5652b; --accent-text: #ffffff; --border: #e6dccf; --quote-bg: #f3ece2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1814; --card: #27211b; --text: #f1e9df; --muted: #a8998a;
+      --accent: #d98a4e; --accent-text: #1c1814; --border: #3a3129; --quote-bg: #2f2821;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+  .hint { color: var(--muted); font-size: .95rem; margin: 6px 0 14px; }
+  .group {
+    display: grid; grid-template-columns: 64px 1fr; gap: 10px 12px; align-items: start;
+    padding: 12px; margin-bottom: 10px; border: 2px solid var(--border); border-radius: 12px; background: var(--card);
+  }
+  .group.ignored { opacity: .55; }
+  .group img {
+    width: 64px; height: 64px; object-fit: contain; background: #fff; border-radius: 8px;
+    image-rendering: auto; border: 1px solid var(--border);
+  }
+  .count { font-size: .85rem; color: var(--muted); }
+  .example { font-size: .9rem; background: var(--quote-bg); border-radius: 6px; padding: 4px 8px; margin: 4px 0 0; }
+  .controls { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  input[type=text] {
+    flex: 1; min-width: 0; padding: 10px; font: inherit;
+    border: 2px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text);
+  }
+  label { font-size: .9rem; color: var(--muted); white-space: nowrap; }
+  #save {
+    width: 100%; padding: 14px; margin-top: 8px; font: inherit; font-weight: 700; border: none;
+    border-radius: 12px; background: var(--accent); color: var(--accent-text); cursor: pointer;
+  }
+  #save:disabled, #skip:disabled { opacity: .5; }
+  #skip {
+    width: 100%; padding: 12px; margin-top: 8px; font: inherit; border: 2px solid var(--border);
+    border-radius: 12px; background: var(--card); color: var(--text); cursor: pointer;
+  }
+  #back { display: inline-block; margin-bottom: 4px; }
+  #rare { margin: 4px 0 12px; }
+  #rare summary { color: var(--accent); cursor: pointer; margin-bottom: 10px; }
+  #status { margin: 12px 0; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <a id="back" href="/">← Zurück</a>
+  <h1>Symbole benennen<span id="game"></span></h1>
+  <p class="hint">Diese Bildsymbole stehen im Regeltext mitten im Satz und gehen beim Umwandeln
+    verloren. Gib jedem den Begriff, für den es steht (z. B. „Stärke“, „Blut“) – dann versteht der
+    Erklärbär die Sätze. Leer gelassen wird es als „[Symbol]“ markiert. Bildausschnitte und
+    Verzierungen auf „ignorieren“ setzen.</p>
+  <div id="groups"></div>
+  <details id="rare" hidden>
+    <summary></summary>
+    <div id="raregroups"></div>
+  </details>
+  <datalist id="names"></datalist>
+  <button id="save">Übernehmen und umwandeln</button>
+  <button id="skip" hidden>Überspringen – ohne Symbolnamen umwandeln</button>
+  <p id="status"></p>
+</main>
+
+<script>
+// /symbole?spiel=<id>: name the icons of a rulebook. Opened automatically after
+// an import that found icons, or later for any game.
+const $ = (id) => document.getElementById(id);
+const game = new URLSearchParams(location.search).get("spiel");
+$("back").href = `/?spiel=${encodeURIComponent(game)}`;
+
+function card(g) {
+  const div = document.createElement("div");
+  div.className = "group";
+  div.innerHTML = `
+    <img alt="Symbol">
+    <div><div class="count"></div></div>
+    <div class="controls">
+      <input type="text" placeholder="Begriff, z. B. Stärke" autocomplete="off" list="names">
+      <label><input type="checkbox"> ignorieren</label>
+    </div>`;
+  div.querySelector("img").src = `/api/symbole/${game}/${g.id}.png`;
+  div.querySelector(".count").textContent = `${g.count}× im Text`;
+  for (const example of g.examples.slice(0, 2)) {
+    const p = document.createElement("p");
+    p.className = "example";
+    p.textContent = example;
+    div.children[1].append(p);
+  }
+  const input = div.querySelector("input[type=text]");
+  const ignore = div.querySelector("input[type=checkbox]");
+  input.value = g.name;
+  ignore.checked = g.ignore;
+  const update = () => {
+    div.classList.toggle("ignored", ignore.checked);
+    input.disabled = ignore.checked;
+  };
+  ignore.onchange = update;
+  // Typing a name means the icon counts.
+  input.oninput = () => { if (input.value) { ignore.checked = false; update(); } };
+  input.onchange = suggestNames;
+  update();
+  div.dataset.id = g.id;
+  return div;
+}
+
+async function load() {
+  const response = await fetch(`/api/symbole/${game}`);
+  if (!response.ok) { $("status").textContent = "Spiel nicht gefunden."; $("save").hidden = true; return; }
+  const data = await response.json();
+  $("game").textContent = ` – ${data.name}`;
+  // During an import the game only exists once it is converted.
+  if (data.job) {
+    $("skip").hidden = false;
+    $("back").hidden = true;
+  }
+  document.title = `Symbole – ${data.name}`;
+  if (!data.groups.length) {
+    $("status").textContent = "In diesem Regelheft wurden keine Symbole im Text gefunden.";
+    $("save").hidden = true;
+    if (data.job) $("skip").textContent = "Umwandeln";
+    return;
+  }
+  // Frequent icons first; rare ones (portraits, decorations) folded away.
+  const frequent = data.groups.filter((g) => g.count >= 3 || g.name);
+  const rare = data.groups.filter((g) => !frequent.includes(g));
+  $("groups").replaceChildren(...frequent.map(card));
+  $("raregroups").replaceChildren(...rare.map(card));
+  $("rare").hidden = !rare.length;
+  $("rare").querySelector("summary").textContent = `${rare.length} seltene Symbole (1–2× im Text) anzeigen`;
+  suggestNames();
+}
+
+// Names given so far, offered while typing: the same icon on another
+// background can end up in a second group.
+function suggestNames() {
+  const names = new Set([...document.querySelectorAll(".group input[type=text]")].map((i) => i.value.trim()).filter(Boolean));
+  $("names").replaceChildren(...[...names].sort().map((n) => Object.assign(document.createElement("option"), { value: n })));
+}
+
+$("save").onclick = () => {
+  const names = {};
+  for (const div of document.querySelectorAll(".group")) {
+    const ignored = div.querySelector("input[type=checkbox]").checked;
+    names[div.dataset.id] = ignored ? null : div.querySelector("input[type=text]").value.trim();
+  }
+  submit(names);
+};
+$("skip").onclick = () => submit({});
+
+async function submit(names) {
+  $("save").disabled = $("skip").disabled = true;
+  $("status").textContent = "Schreibe Symbole ins Regelheft …";
+  try {
+    const response = await fetch(`/api/symbole/${game}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ names }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail);
+    const started = Date.now();
+    while (true) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const job = await (await fetch(`/api/import/${result.job}`)).json();
+      if (job.status === "fertig") {
+        $("status").innerHTML = `✅ Fertig. <a href="/?spiel=${encodeURIComponent(game)}">Zum Spiel</a>`;
+        break;
+      }
+      if (job.status === "fehler") throw new Error(job.message);
+      $("status").textContent = `Wandle um … ${Math.round((Date.now() - started) / 1000)} s`;
+    }
+  } catch (err) {
+    $("status").textContent = `❌ ${err.message}`;
+    $("save").disabled = $("skip").disabled = false;
+  }
+}
+
+load();
+</script>
+</body>
+</html>

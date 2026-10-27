@@ -1,0 +1,20 @@
+# Rulebooks are copyrighted: only the placeholder README is tracked.
+/regelwerke/*
+!/regelwerke/README.md
+
+# Downloaded models, logs of guests' questions, recordings, local data
+/models/
+/logs/
+/backup/
+/openwebui/
+*.wav
+/tools/symbol-experimente/*.pdf
+installiert.txt
+
+# Machine-specific settings (see .env.example) and personal notes
+.env
+NOTIZEN.md
+
+# Python
+.venv/
+__pycache__/
