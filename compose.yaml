@@ -27,7 +27,7 @@ services:
       OLLAMA_MODELS: /models
       # Prompt cache of llama-server (MiB): how many rulebooks stay read in.
       # Ollama passes LLAMA_ARG_* through; llama-server's default is 8192.
-      LLAMA_ARG_CACHE_RAM: ${CACHE_RAM_MIB:-12288}
+      LLAMA_ARG_CACHE_RAM: ${CACHE_RAM_MIB:-8192}
     volumes:
       # Models already downloaded by the former native Ollama install.
       - ${OLLAMA_DATA:-/var/lib/ollama}:/models
@@ -82,18 +82,16 @@ services:
     restart: unless-stopped
     # Imported rulebooks belong to the laptop user, not root.
     user: "${ERKLAERBAER_UID:-1000}:${ERKLAERBAER_GID:-1000}"
-    depends_on: [ollama, whisper, docling]
+    depends_on: [ollama, whisper]
     environment:
       OLLAMA_URL: http://ollama:11434
       WHISPER_URL: http://whisper:8080
-      # For importing rulebooks from the web page.
-      DOCLING_URL: http://docling:5001
       # LLM; qwen3:30b-a3b-instruct-2507-q4_K_M is the more careful, bigger alternative.
       ERKLAERBAER_MODELL: ${ERKLAERBAER_MODELL:-gemma4:e4b}
       # Cache per token of that model (KB), decides how many rulebooks are warmed.
       CACHE_KB_PRO_TOKEN: ${CACHE_KB_PRO_TOKEN:-11}
       # Must match LLAMA_ARG_CACHE_RAM above; decides how many rulebooks are warmed.
-      CACHE_RAM_MIB: ${CACHE_RAM_MIB:-12288}
+      CACHE_RAM_MIB: ${CACHE_RAM_MIB:-8192}
       # gross | alle | keine | liste (regelwerke/vorwaermen.txt)
       VORWAERMEN: ${VORWAERMEN:-gross}
       VORWAERMEN_PAUSE: ${VORWAERMEN_PAUSE:-300}
@@ -103,15 +101,6 @@ services:
       - ./logs:/srv/logs
     ports:
       - 8090:8090
-
-  # Converts rulebook PDFs (import on the web page, tools/neues-spiel.sh).
-  docling:
-    image: quay.io/docling-project/docling-serve-cpu:latest
-    restart: unless-stopped
-    environment:
-      DOCLING_SERVE_ENABLE_UI: "true"
-    ports:
-      - 127.0.0.1:5001:5001
 
   # --- Tools for preparing rulebooks and testing (profile "werkzeuge") ---
 

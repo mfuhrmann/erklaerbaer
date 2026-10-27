@@ -1,8 +1,8 @@
-"""Find PDF pages that docling dropped and append their raw text.
+"""Find PDF pages the converter dropped and append their raw text.
 
 Usage: python3 -I tools/check_coverage.py RULEBOOK.pdf RULEBOOK.md
 
-Docling sometimes treats a whole page as a picture and returns no text for
+Converters sometimes treat a whole page as a picture and return no text for
 it. For every page, compare the words pdftotext finds with the Markdown; if
 too few of them made it, append the raw page text so the rules are not lost.
 """
@@ -53,7 +53,7 @@ def main():
             continue
         coverage = len(page_words & md_words) / len(page_words)
         # Symbol names written into the PDF (tools/symbole.py) are invisible
-        # text, which docling sometimes drops; the sentences then lose them.
+        # text, which converters sometimes drop; the sentences then lose them.
         symbol_runs = {run for run in words(SYMBOL.sub(lambda m: f" {SYMBOL_MARK}{m.group(1)} ", text))
                        if SYMBOL_MARK.lower() in run}
         symbol_runs = {run.replace(SYMBOL_MARK.lower(), "") for run in symbol_runs}

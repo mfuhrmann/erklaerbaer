@@ -18,6 +18,10 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY app ./app
 COPY tools ./tools
 
+# Scripts call python3: the project's environment (pymupdf4llm) and tesseract's data.
+ENV PATH="/srv/.venv/bin:$PATH" \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
+
 # Rulebooks and logs are mounted from the host, so new games need no rebuild.
 VOLUME ["/srv/regelwerke", "/srv/logs"]
 EXPOSE 8090

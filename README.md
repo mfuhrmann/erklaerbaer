@@ -28,7 +28,7 @@ Repository sind keine.
 
 **Am einfachsten über die Webseite:** unten „➕ Anleitung importieren“, Namen
 eintippen, PDF wählen (geht auch vom Handy). Die App erkennt, ob das PDF Text
-enthält (→ Docling) oder nur Bilder (→ Texterkennung) und nimmt das Spiel ohne
+enthält (→ pymupdf4llm) oder nur Bilder (→ Texterkennung) und nimmt das Spiel ohne
 Neustart auf. Dauer: Sekunden bis wenige Minuten. Kein Passwortschutz –
 jeder im WLAN kann importieren.
 
@@ -45,13 +45,15 @@ Von Hand:
 1. PDF nach `regelwerke/<spiel-id>.pdf` legen, z. B. `regelwerke/flip-7.pdf`.
 2. Umwandeln:
    ```bash
-   tools/neues-spiel.sh regelwerke/flip-7.pdf     # PDF mit Text (Docling)
-   tools/ocr-spiel.sh regelwerke/flip-7.pdf deu   # Scan / Schrift als Grafik
+   uv run bash tools/neues-spiel.sh regelwerke/flip-7.pdf   # PDF mit Text (pymupdf4llm)
+   tools/ocr-spiel.sh regelwerke/flip-7.pdf deu              # Scan / Schrift als Grafik
    ```
    `ocr-spiel.sh` nimmt `deu`, `eng` oder `deu+eng`, `negativ` als drittes
    Argument für helle Schrift auf dunklem Grund. Warnungen von
-   `neues-spiel.sh` wie `Seite 4 nur zu 31% erkannt` bedeuten: Docling hat die
-   Seite nicht gelesen, ihr Rohtext wurde angehängt.
+   `neues-spiel.sh` wie `Seite 4 nur zu 31% erkannt` bedeuten: die Umwandlung
+   hat die Seite nicht vollständig gelesen, ihr Rohtext wurde angehängt.
+   Umgewandelt wird mit pymupdf4llm (statt früher Docling: im Vergleich mehr
+   Text erhalten, Symbolnamen behalten, 2–3× schneller, kein eigener Dienst).
 3. Anzeigenamen in `regelwerke/spiele.json` eintragen.
 4. `docker compose restart erklaerbaer`
 
@@ -88,7 +90,7 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
 
   | Variable | Standard | Bedeutung |
   |---|---|---|
-  | `CACHE_RAM_MIB` | 12288 | Prompt-Cache von llama-server in MiB; mehr RAM → mehr Spiele vorgewärmt |
+  | `CACHE_RAM_MIB` | 8192 | Cache für gelesene Regelhefte in MiB (alle ~90 brauchen mit gemma4:e4b ~6–7 GB). Er füllt sich mit der Zeit bis zu dieser Grenze – nicht großzügiger als nötig setzen |
   | `VORWAERMEN` | `gross` | `gross`, `alle`, `keine` oder `liste` (`regelwerke/vorwaermen.txt`, eine Spiel-ID pro Zeile) |
   | `VORWAERMEN_PAUSE` | 300 | Sekunden ohne Fragen, bis vorgewärmte Hefte aufgefrischt werden |
   | `ERKLAERBAER_MODELL` | gemma4:e4b | Sprachmodell (Alternative: qwen3:30b-a3b-instruct-2507-q4_K_M) |
@@ -118,11 +120,11 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
 | `app/static/index.html` | Oberfläche: Spielliste, Fragen mit Verlauf, Import |
 | `app/static/seite.html` | Regelheft-Seite als Bild mit markiertem Zitat |
 | `app/static/symbole.html` | Galerie zum Benennen von Bildsymbolen |
-| `tools/neues-spiel.sh` | PDF mit Text → bereinigtes Markdown (Docling) |
+| `tools/neues-spiel.sh`, `tools/pdf_md.py` | PDF mit Text → bereinigtes Markdown (pymupdf4llm) |
 | `tools/ocr-spiel.sh`, `tools/ocr_md.py` | Scans / Schrift als Grafik → Markdown (tesseract) |
 | `tools/symbole.py` | Bildsymbole im Text finden und als unsichtbaren Text ins PDF schreiben |
 | `tools/clean_md.py` | Bereinigung (wiederholte Überschriften, Bild-Platzhalter) |
-| `tools/check_coverage.py` | findet Seiten (und Symbolnamen), die Docling verloren hat |
+| `tools/check_coverage.py` | findet Seiten (und Symbolnamen), die bei der Umwandlung verloren gingen |
 | `tools/ask.py` | System-Prompt, Modellwahl und Kommandozeilen-Test |
 | `tools/symbol-experimente/` | Messskripte: Symbolerkennung, Modell- und Cache-Vergleich |
 | `regelwerke/` | Regelhefte (nicht im Repository), siehe `regelwerke/README.md` |
@@ -141,7 +143,6 @@ Spiele direkt verlinken (z. B. für QR-Codes in der Schachtel):
 | ollama | 127.0.0.1:11434 | LLM |
 | whisper | – (nur intern) | Spracherkennung |
 | open-webui | 127.0.0.1:3080 | Testen, Admin (Profil `werkzeuge`) |
-| docling | 127.0.0.1:5001 | PDF-Umwandlung (Import, `neues-spiel.sh`), ~1,7 GB RAM |
 
 Die Ollama-Modelle liegen in `/var/lib/ollama` (Pfad über `OLLAMA_DATA`
 änderbar). Läuft auf dem Rechner zusätzlich ein natives Ollama, kollidiert es

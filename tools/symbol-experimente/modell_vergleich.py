@@ -1,4 +1,4 @@
-# modell_vergleich.py <model> <label> : answer quality across many rulebooks
+# modell_vergleich.py <model> <label> [rulebook dir] : answer quality across many rulebooks
 # Same prompt and sampling as the app; each question twice, without history.
 # Expected answers were checked against the rulebooks by hand.
 import json, re, sys, time
@@ -39,11 +39,13 @@ QUESTIONS = [
 ]
 
 model, label = sys.argv[1], sys.argv[2]
+# Default: the converted rulebooks the app uses; another dir compares converters.
+rules_dir = sys.argv[3] if len(sys.argv) > 3 else "/home/mf1045/projects/erklaerbaer/regelwerke"
 results = []
 started = time.time()
 with httpx.Client(timeout=1200) as client:
     for game, question, expected in QUESTIONS:
-        rules = open(f"/home/mf1045/projects/erklaerbaer/regelwerke/{game}.md", encoding="utf-8").read()
+        rules = open(f"{rules_dir}/{game}.md", encoding="utf-8").read()
         for run in range(2):
             payload = {"model": model, "stream": False, "keep_alive": -1,
                        "options": {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "num_predict": 1024},

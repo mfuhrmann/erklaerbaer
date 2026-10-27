@@ -12,6 +12,6 @@ Pro Spiel entstehen hier:
 | `<id>.pdf` | Regelheft (ggf. mit unsichtbar eingetragenen Symbolnamen) |
 | `<id>.orig.pdf` | hochgeladenes Original |
 | `<id>.md` | bereinigter Text, den das Modell liest |
-| `<id>.docling.md` | Rohausgabe von Docling |
+| `<id>.roh.md` | Rohausgabe der Umwandlung (ältere Spiele: `<id>.docling.md`) |
 | `<id>.symbole.json` | Namen der Bildsymbole aus der Galerie |
 | `spiele.json` | Anzeigenamen aller Spiele |

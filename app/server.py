@@ -97,12 +97,12 @@ def load_game(path, names):
 
 
 def load_games():
-    """Every cleaned rulebook (*.md, not *.docling.md) is one game."""
+    """Every cleaned rulebook (*.md, not the raw *.roh.md / *.docling.md) is one game."""
     names = game_names()
     return {
         path.stem: load_game(path, names)
         for path in sorted(RULES_DIR.glob("*.md"))
-        if not path.name.endswith(".docling.md")
+        if not path.name.endswith((".roh.md", ".docling.md"))
     }
 
 
@@ -344,7 +344,7 @@ def quote_page(game_id: str, quote: str):
 # --- Import: drop a rulebook PDF in from any device (e.g. a phone at the table).
 
 imports = {}  # job id -> {"status": ..., "game": ..., "message": ...}
-import_lock = asyncio.Lock()  # one conversion at a time; docling and OCR are heavy
+import_lock = asyncio.Lock()  # one conversion at a time; converting and OCR are heavy
 
 
 def slug(name):
@@ -362,7 +362,7 @@ def has_text_layer(pdf):
 async def convert(job, game_id, name, pdf, ocr=False, new=True):
     async with import_lock:
         imports[job]["status"] = "läuft"
-        # OCR keeps German and English text; docling loses text on image PDFs.
+        # OCR keeps German and English text; converters lose text on image PDFs.
         if ocr:
             # ocr-spiel.sh replaces the PDF with a rendered one; keep the upload.
             shutil.copy(pdf, RULES_DIR / f"{game_id}.orig.pdf")
