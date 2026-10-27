@@ -182,6 +182,8 @@ async def warm(client, game):
 
 # Ids of the rulebooks kept warm; imports add to it (warm_imported).
 warm_ids = []
+# Progress of the first warm-up after start, shown on the web page.
+warm_progress = {"done": 0, "total": 0, "running": True}
 
 
 async def warm_and_report(client, game_id):
@@ -199,9 +201,14 @@ async def warm_up():
           f"~{sum(g['tokens'] for g in chosen)} Tokens, Cache {CACHE_RAM_MIB} MiB", flush=True)
 
     async def run():
+        started = time.time()
+        warm_progress.update(done=0, total=len(warm_ids), running=bool(warm_ids))
         async with httpx.AsyncClient(timeout=600) as client:
             for game_id in list(warm_ids):
                 await warm_and_report(client, game_id)
+                warm_progress["done"] += 1
+            warm_progress["running"] = False
+            print(f"vorwärmen fertig: {len(warm_ids)} Spiele in {(time.time() - started) / 60:.0f} min", flush=True)
             # Touching a rulebook that is still cached takes about a second.
             while warm_ids:
                 await asyncio.sleep(REFRESH_SECONDS)
@@ -225,6 +232,11 @@ async def warm_imported(game_id):
         warm_ids.append(game_id)
     async with httpx.AsyncClient(timeout=600) as client:
         await warm_and_report(client, game_id)
+
+
+@app.get("/api/status")
+def status():
+    return {"vorwaermen": warm_progress}
 
 
 @app.get("/api/games")

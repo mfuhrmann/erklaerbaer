@@ -95,6 +95,7 @@
   <section id="pick">
     <h1>🐻 Erklärbär</h1>
     <p class="sub">Für welches Spiel brauchst du eine Regel?</p>
+    <p class="hint" id="warming" hidden></p>
     <input id="search" type="search" placeholder="🔍 Spiel suchen …" autocomplete="off">
     <div id="recentbox">
       <p class="label">Zuletzt gewählt</p>
@@ -242,6 +243,17 @@ async function loadGames() {
 }
 
 $("search").addEventListener("input", renderGames);
+
+// While the rulebooks are read in after a start, first questions take longer.
+async function showWarming() {
+  try {
+    const { vorwaermen: w } = await (await fetch("/api/status")).json();
+    $("warming").hidden = !w.running;
+    $("warming").textContent = `⏳ Regelhefte werden vorbereitet: ${w.done} von ${w.total} – erste Fragen können etwas länger dauern.`;
+    if (w.running) setTimeout(showWarming, 10000);
+  } catch {}
+}
+showWarming();
 
 // --- Import: upload a rulebook PDF; the server converts it in the background.
 

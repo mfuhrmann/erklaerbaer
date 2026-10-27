@@ -78,7 +78,9 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
   liegt ein Heft im Cache, kommt die Antwort in ~2 s.
 - **Vorwärmen:** Beim Start liest die App die größten Regelhefte ein, die in
   den Cache passen (mit Gemma 4 e4b passen ~90 Hefte locker hinein); neu
-  importierte Spiele werden direkt nach dem Import eingelesen. Fragen von
+  importierte Spiele werden direkt nach dem Import eingelesen. Den Fortschritt
+  zeigt die Startseite („⏳ Regelhefte werden vorbereitet: 29 von 92“), am Ende
+  steht „vorwärmen fertig“ im Log. Fragen von
   Gästen unterbrechen das Vorwärmen (Ollama bearbeitet nur eine Anfrage
   gleichzeitig). Ist eine Weile niemand aktiv, frischt die App die
   vorgewärmten Hefte auf, damit verdrängte wieder im Cache sind.
