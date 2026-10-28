@@ -30,6 +30,7 @@
     image-rendering: auto; border: 1px solid var(--border);
   }
   .count { font-size: .85rem; color: var(--muted); }
+  .where { font-size: .9rem; margin: 6px 0 0; }
   .example { font-size: .9rem; background: var(--quote-bg); border-radius: 6px; padding: 4px 8px; margin: 4px 0 0; }
   .controls { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
   input[type=text] {
@@ -97,6 +98,21 @@ function card(g) {
     p.textContent = example;
     div.children[1].append(p);
   }
+  // The page around it (legend, headings) tells what the icon stands for.
+  const where = document.createElement("p");
+  where.className = "where";
+  where.textContent = "Im Regelheft: ";
+  g.pages.forEach((page, n) => {
+    const a = document.createElement("a");
+    a.href = `/api/symbole/${game}/${g.id}/stelle/${n}.jpg`;
+    a.target = "_blank";
+    a.rel = "noopener";
+    // Several places on one page: "Seite 1, Seite 1 (2)".
+    const before = g.pages.slice(0, n).filter((p) => p === page).length;
+    a.textContent = before ? `Seite ${page} (${before + 1})` : `Seite ${page}`;
+    where.append(n ? ", " : "", a);
+  });
+  div.children[1].append(where);
   const input = div.querySelector("input[type=text]");
   const ignore = div.querySelector("input[type=checkbox]");
   input.value = g.name;

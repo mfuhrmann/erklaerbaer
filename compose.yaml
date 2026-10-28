@@ -21,7 +21,7 @@ services:
       # follow-up history and the answer.
       OLLAMA_CONTEXT_LENGTH: ${KONTEXT_TOKENS:-40960}
       OLLAMA_FLASH_ATTENTION: "1"
-      # Precision of the per-token cache: q8_0 (~52 KB/token) or q4_0 (about half).
+      # Precision of the per-token cache: q8_0 or q4_0 (about half the size).
       OLLAMA_KV_CACHE_TYPE: ${KV_CACHE_TYPE:-q8_0}
       OLLAMA_KEEP_ALIVE: "-1"
       OLLAMA_MODELS: /models
@@ -88,8 +88,9 @@ services:
       WHISPER_URL: http://whisper:8080
       # LLM; qwen3:30b-a3b-instruct-2507-q4_K_M is the more careful, bigger alternative.
       ERKLAERBAER_MODELL: ${ERKLAERBAER_MODELL:-gemma4:e4b}
-      # Cache per token of that model (KB), decides how many rulebooks are warmed.
-      CACHE_KB_PRO_TOKEN: ${CACHE_KB_PRO_TOKEN:-11}
+      # Cache per token of that model (KB) including llama.cpp's checkpoints
+      # (gemma4:e4b: 8.1 GB for 567k tokens), decides how many rulebooks are warmed.
+      CACHE_KB_PRO_TOKEN: ${CACHE_KB_PRO_TOKEN:-15}
       # Must match LLAMA_ARG_CACHE_RAM above; decides how many rulebooks are warmed.
       CACHE_RAM_MIB: ${CACHE_RAM_MIB:-8192}
       # gross | alle | keine | liste (regelwerke/vorwaermen.txt)
@@ -101,6 +102,25 @@ services:
       - ./logs:/srv/logs
     ports:
       - 8090:8090
+
+  # HTTPS for phones (microphone needs it): https://<laptop-ip>:8443,
+  # self-signed, guests confirm a browser warning once. https/caddy.json:
+  # - certificates on demand for whatever IP is used (new event network, no
+  #   change); Caddy only asks /api/status, any address is fine.
+  # - certificates for 30 days (intermediate 1 year): the warning comes back
+  #   with every new certificate, Caddy's default of 12 h hit mid-event.
+  #   JSON because the Caddyfile can't set the lifetime for a site without
+  #   a hostname (caddy 2.8: "automation policy ... in conflict").
+  https:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    depends_on: [erklaerbaer]
+    command: ["caddy", "run", "--config", "/etc/caddy/caddy.json"]
+    volumes:
+      - ./https/caddy.json:/etc/caddy/caddy.json:ro
+      - caddy-data:/data
+    ports:
+      - 8443:8443
 
   # --- Tools for preparing rulebooks and testing (profile "werkzeuge") ---
 
@@ -117,6 +137,8 @@ services:
       - 127.0.0.1:3080:8080
 
 volumes:
+  # Caddy's own CA and certificates, so the browser warning stays the same.
+  caddy-data:
   open-webui:
     # Keeps the account and settings of the Open WebUI started by hand.
     external: true

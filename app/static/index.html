@@ -127,6 +127,7 @@
       <button class="primary">Fragen</button>
     </form>
     <button id="talk" hidden>🎤 Gedrückt halten und sprechen</button>
+    <p class="hint" id="talkhint" hidden></p>
     <div id="examples">
       <p class="label">Zum Beispiel</p>
       <div class="chips"></div>
@@ -302,6 +303,17 @@ $("importform").onsubmit = async (e) => {
 
 const canRecord = window.isSecureContext && navigator.mediaDevices && window.MediaRecorder;
 $("talk").hidden = !canRecord;
+// Over plain http the browser blocks the microphone: point to the https address
+// (https/caddy.json; self-signed, the warning has to be confirmed once).
+if (!canRecord && location.protocol === "http:") {
+  $("talkhint").hidden = false;
+  $("talkhint").innerHTML = `🎤 Spracheingabe gibt es unter <a id="securelink" href="#">der sicheren Adresse</a> – beim ersten Aufruf die Browser-Warnung bestätigen („Erweitert“ → „Weiter“).`;
+  // Built on tap, so it opens the game selected now.
+  $("securelink").onclick = (e) => {
+    e.preventDefault();
+    location.href = `https://${location.hostname}:8443${location.pathname}${location.search}`;
+  };
+}
 
 let recorder = null;
 let chunks = [];

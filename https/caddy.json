@@ -1,0 +1,59 @@
+{
+  "apps": {
+    "http": {
+      "servers": {
+        "srv0": {
+          "listen": [
+            ":8443"
+          ],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "upstreams": [
+                    {
+                      "dial": "erklaerbaer:8090"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {}
+          ]
+        }
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {
+          "install_trust": false,
+          "intermediate_lifetime": "8760h"
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "issuers": [
+              {
+                "module": "internal",
+                "lifetime": "720h"
+              }
+            ],
+            "on_demand": true
+          }
+        ],
+        "on_demand": {
+          "permission": {
+            "endpoint": "http://erklaerbaer:8090/api/status",
+            "module": "http"
+          }
+        }
+      }
+    }
+  }
+}

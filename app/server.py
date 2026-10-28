@@ -17,8 +17,9 @@ from collections import Counter
 from pathlib import Path
 
 import httpx
+import pymupdf
 from fastapi import FastAPI, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -39,8 +40,9 @@ OPTIONS = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "num_predict": 1024}
 # Prompt cache of llama-server, same value as LLAMA_ARG_CACHE_RAM in compose.yaml.
 CACHE_RAM_MIB = int(os.environ.get("CACHE_RAM_MIB", "8192"))
 # Cache per token, depends on the model: qwen3:30b-a3b 52 KB (q8_0 KV),
-# gemma4:e4b 10.5 KB (q8_0 KV; it keeps most layers' attention local).
-CACHE_BYTES_PER_TOKEN = int(float(os.environ.get("CACHE_KB_PRO_TOKEN", "52")) * 1000)
+# gemma4:e4b ~15 KB (q8_0 KV; ~9 KB per token plus llama.cpp's checkpoints,
+# needed because most of its layers only attend to a sliding window).
+CACHE_BYTES_PER_TOKEN = int(float(os.environ.get("CACHE_KB_PRO_TOKEN", "15")) * 1000)
 # "gross": largest rulebooks that fit the cache, "alle", "keine",
 # or "liste": the game ids in regelwerke/vorwaermen.txt (one per line).
 WARM_MODE = os.environ.get("VORWAERMEN", "gross")
@@ -97,12 +99,13 @@ def load_game(path, names):
 
 
 def load_games():
-    """Every cleaned rulebook (*.md, not the raw *.roh.md / *.docling.md) is one game."""
+    """Every cleaned rulebook (*.md, not the raw *.roh.md / *.docling.md or the
+    folder's README) is one game."""
     names = game_names()
     return {
         path.stem: load_game(path, names)
         for path in sorted(RULES_DIR.glob("*.md"))
-        if not path.name.endswith((".roh.md", ".docling.md"))
+        if not path.name.endswith((".roh.md", ".docling.md")) and path.name != "README.md"
     }
 
 
@@ -163,7 +166,11 @@ last_question = 0.0
 
 async def warm(client, game):
     """Read one rulebook into Ollama's cache, giving way to questions."""
-    payload = chat_payload(game, "Hallo", stream=False, options={**OPTIONS, "num_predict": 1})
+    # An empty question: Gemma's sliding window lets llama.cpp resume only from
+    # checkpoints, set a few tokens before the prompt's end. With "Hallo" the
+    # last one fell just past where a real question starts, so every first
+    # question re-read ~2000 tokens (8 s instead of 0.3 s, Sky Team).
+    payload = chat_payload(game, "", stream=False, options={**OPTIONS, "num_predict": 1})
     while True:
         while active_questions:
             await asyncio.sleep(1)
@@ -457,6 +464,8 @@ def symbols(game_id: str):
     named = saved_names(game_id, all_groups)
     groups = [{
         "id": i, "count": group["count"], "examples": group["examples"],
+        # Pages (1-based) of the first places, for links to the icon in context.
+        "pages": [place[0] + 1 for place in group["places"][:3]],
         "name": named.get(i) or "",
         # Rare icons are mostly portraits and decorations.
         "ignore": i not in named and (bool(named) or group["count"] < 3),
@@ -471,6 +480,18 @@ def symbol_image(game_id: str, group: int):
     if not image.exists():
         raise HTTPException(404, "Kein Bild")
     return FileResponse(image, media_type="image/png")
+
+
+@app.get("/api/symbole/{game_id}/{group}/stelle/{n}.jpg")
+def symbol_place(game_id: str, group: int, n: int):
+    """The whole page with the icon's n-th place framed in red: shows what it stands for."""
+    groups = symbol_groups(game_id)
+    if not 0 <= group < len(groups) or not 0 <= n < len(groups[group]["places"]):
+        raise HTTPException(404, "Keine solche Stelle")
+    number, *box = groups[group]["places"][n]
+    page = pymupdf.open(original_pdf(game_id))[number]
+    page.draw_rect(pymupdf.Rect(box) + (-3, -3, 3, 3), color=(0.9, 0, 0), width=2)
+    return Response(page.get_pixmap(dpi=110).tobytes("jpeg"), media_type="image/jpeg")
 
 
 class SymbolNames(BaseModel):
