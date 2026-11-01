@@ -48,6 +48,14 @@
   .progress { height: 4px; margin-bottom: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
   #warmbar { height: 100%; width: 0; background: var(--accent); transition: width .5s; }
   .menutitle { margin: 6px 8px 0; font-weight: 700; }
+  #pendingbox { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 4px; }
+  #pending a { display: block; padding: 8px; color: var(--accent); }
+  /* Something waits in the menu (symbol names). */
+  .top > button.dot { position: relative; }
+  .top > button.dot::after {
+    content: ""; position: absolute; top: 6px; right: 6px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--rec);
+  }
   .menu .hint { margin: 6px 8px; }
   .sub { margin: 14px 0 0; }
   .letter { margin: 10px 0 0; font-weight: 700; color: var(--accent); }
@@ -153,6 +161,10 @@
           <button class="primary">Hochladen</button>
         </form>
         <p class="hint" id="importstatus">PDF der Spielanleitung, am besten deutsch. Das Umwandeln dauert je nach Heft 10 s bis einige Minuten.</p>
+        <div id="pendingbox" hidden>
+          <p class="menutitle">🔣 Warten auf Symbol-Namen</p>
+          <div id="pending"></div>
+        </div>
       </div>
       <div id="warming" hidden>
         <div class="progress"><div id="warmbar"></div></div>
@@ -401,7 +413,8 @@ $("search").addEventListener("input", renderGames);
 // While the rulebooks are read in after a start, first questions take longer.
 async function showWarming() {
   try {
-    const { vorwaermen: w, loeschen, vorlesen } = await (await fetch("/api/status")).json();
+    const { vorwaermen: w, loeschen, vorlesen, symbole_offen: pending } = await (await fetch("/api/status")).json();
+    showPending(pending || []);
     canDelete = loeschen;
     $("delete").hidden = !canDelete || !$("deleteform").hidden;
     canSpeak = vorlesen;
@@ -412,10 +425,23 @@ async function showWarming() {
     $("warming").hidden = !w.running;
     $("warmbar").style.width = `${w.total ? (100 * w.done) / w.total : 0}%`;
     $("warmtext").textContent = `Regelhefte werden vorbereitet (${w.done} von ${w.total}) – erste Fragen dauern etwas länger.`;
-    if (w.running) setTimeout(showWarming, 10000);
+    // After the warm-up less often: imports may still stop at the symbol gallery.
+    setTimeout(showWarming, w.running ? 10000 : 30000);
   } catch {}
 }
 showWarming();
+
+// Imports stopped at the symbol gallery: the gallery link, so nobody has to know the id.
+function showPending(pending) {
+  $("pendingbox").hidden = !pending.length;
+  $("pending").replaceChildren(...pending.map((p) => {
+    const a = document.createElement("a");
+    a.href = `/symbole?spiel=${encodeURIComponent(p.id)}`;
+    a.textContent = p.name;
+    return a;
+  }));
+  $("startmenubutton").classList.toggle("dot", pending.length > 0);
+}
 
 // --- Import: upload a rulebook PDF; the server converts it in the background.
 

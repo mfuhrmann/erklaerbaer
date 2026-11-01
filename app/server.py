@@ -264,7 +264,9 @@ async def warm_imported(game_id):
 
 @app.get("/api/status")
 def status():
-    return {"vorwaermen": warm_progress, "loeschen": bool(DELETE_PIN), "vorlesen": VOICE_FILE.exists()}
+    waiting = [{"id": s["game"], "name": s["name"]} for s in imports.values() if s["status"] == "symbole"]
+    return {"vorwaermen": warm_progress, "loeschen": bool(DELETE_PIN), "vorlesen": VOICE_FILE.exists(),
+            "symbole_offen": waiting}
 
 
 @app.get("/api/games")
@@ -477,6 +479,13 @@ imports = {}  # job id -> {"status": ..., "game": ..., "message": ...}
 import_lock = asyncio.Lock()  # one conversion at a time; converting and OCR are heavy
 
 
+def save_name(game_id, name):
+    names = game_names()
+    names[game_id] = name
+    (RULES_DIR / "spiele.json").write_text(
+        json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def slug(name):
     name = name.lower().replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
     name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
@@ -508,11 +517,8 @@ async def convert(job, game_id, name, pdf, ocr=False, new=True):
                 pdf.unlink(missing_ok=True)
             imports[job].update(status="fehler", message=output[-500:])
             return
-        names = game_names()
-        names[game_id] = name
-        (RULES_DIR / "spiele.json").write_text(
-            json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=2), encoding="utf-8")
-        GAMES[game_id] = load_game(RULES_DIR / f"{game_id}.md", names)
+        save_name(game_id, name)
+        GAMES[game_id] = load_game(RULES_DIR / f"{game_id}.md", game_names())
         print(f"importiert: {name} ({output.splitlines()[-1]})", flush=True)
         imports[job].update(status="fertig", message=output.splitlines()[-1])
     asyncio.create_task(warm_imported(game_id))
@@ -658,6 +664,7 @@ async def import_rulebook(pdf: UploadFile, name: str = Form(...)):
     if not data.startswith(b"%PDF"):
         raise HTTPException(400, "Das ist keine PDF-Datei.")
     path.write_bytes(data)
+    save_name(game_id, name)  # a restart before the conversion ends still knows the name
     job = uuid.uuid4().hex[:8]
     imports[job] = {"status": "wartet", "game": game_id, "message": "", "name": name}
     asyncio.create_task(run_import(job, game_id, name, path))
@@ -707,6 +714,27 @@ async def delete_game(game_id: str, pin: str = Header("", alias="X-PIN")):
         warm_ids.remove(game_id)
     print(f"gelöscht: {game['name']} (Dateien in {trash.relative_to(ROOT)})", flush=True)
     return {"ok": True}
+
+
+@app.on_event("startup")
+async def resume_imports():
+    """Imports live in memory: a restart lost those still converting or waiting
+    for symbol names (Sagaland, 2026-11-01). Every rulebook PDF without a text
+    is such an import; start it again from the uploaded original."""
+    names = game_names()
+    for pdf in sorted(RULES_DIR.glob("*.pdf")):
+        game_id = pdf.stem
+        if pdf.name.endswith(".orig.pdf") or game_id in GAMES:
+            continue
+        # An interrupted OCR or symbol run may have rewritten <id>.pdf.
+        original = RULES_DIR / f"{game_id}.orig.pdf"
+        if original.exists():
+            shutil.copy(original, pdf)
+        name = names.get(game_id, game_id.replace("-", " ").title())
+        job = uuid.uuid4().hex[:8]
+        imports[job] = {"status": "wartet", "game": game_id, "message": "", "name": name}
+        print(f"Import wieder aufgenommen: {name}", flush=True)
+        asyncio.create_task(run_import(job, game_id, name, pdf))
 
 
 @app.get("/api/import/{job}")

@@ -31,7 +31,9 @@ Repository sind keine.
 **Am einfachsten über die Webseite:** unten „➕ Anleitung importieren“, Namen
 eintippen, PDF wählen (geht auch vom Handy). Die App erkennt, ob das PDF Text
 enthält (→ pymupdf4llm) oder nur Bilder (→ Texterkennung) und nimmt das Spiel ohne
-Neustart auf. Dauer: Sekunden bis wenige Minuten. Kein Passwortschutz –
+Neustart auf. Dauer: Sekunden bis wenige Minuten. Ein Neustart mitten im
+Import schadet nicht: Der Server nimmt jedes PDF ohne Text beim Start wieder
+auf. Wartet ein Import auf Symbol-Namen, zeigt das Menü ⋯ der Startseite ihn an. Kein Passwortschutz –
 jeder im WLAN kann importieren.
 
 **Spiel entfernen:** im Spiel oben rechts das Menü ⋯ öffnen, „🗑️ Spiel
@@ -155,11 +157,19 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
 | `tools/clean_md.py` | Bereinigung (wiederholte Überschriften, Bild-Platzhalter) |
 | `tools/check_coverage.py` | findet Seiten (und Symbolnamen), die bei der Umwandlung verloren gingen |
 | `tools/ask.py` | System-Prompt, Modellwahl und Kommandozeilen-Test |
+| `tools/qr-karte.py` | Karte mit QR-Code zum Erklärbär (PDF über Chromium) |
 | `tools/symbol-experimente/` | Messskripte: Symbolerkennung, Modell- und Cache-Vergleich |
 | `regelwerke/` | Regelhefte (nicht im Repository), siehe `regelwerke/README.md` |
 | `sammlung/`, `bgg-sammlung.csv` | Spielesammlung (BGG-Export) und Liste noch fehlender Anleitungen |
 | `logs/fragen.jsonl` | alle gestellten Fragen mit Antwort und Dauer |
 | `models/` | Whisper-Modell, Piper-Stimme |
+
+Karte mit QR-Code zum Hinlegen (A7 auf A4, mit Schnittlinie):
+`uv run --with qrcode tools/qr-karte.py` → `erklaerbaer-karte.pdf`. Ohne
+Angabe nimmt das Skript die aktuelle LAN-Adresse des Laptops
+(`https://<ip>:8443`). Die Adresse vor dem Drucken prüfen: In einem anderen
+Netz hat der Laptop eine andere Adresse, und die Karte passt dann nicht mehr.
+Eine feste Adresse: `tools/qr-karte.py https://<ip>:8443 karte.pdf`.
 
 Spiele direkt verlinken (z. B. für QR-Codes in der Schachtel):
 `http://<laptop>:8090/?spiel=colt-express`
