@@ -34,6 +34,12 @@ enthält (→ pymupdf4llm) oder nur Bilder (→ Texterkennung) und nimmt das Spi
 Neustart auf. Dauer: Sekunden bis wenige Minuten. Kein Passwortschutz –
 jeder im WLAN kann importieren.
 
+**Spiel entfernen:** im Spiel ganz unten „🗑️ Spiel entfernen“, dann die PIN
+eingeben. Der Knopf erscheint nur, wenn `ERKLAERBAER_PIN` gesetzt ist. Nach 5
+falschen PINs ist Löschen 5 Minuten gesperrt. Die App verschiebt die Dateien
+nach `regelwerke/.papierkorb/<id>-<zeit>/`. Zurückholen: Dateien zurück nach
+`regelwerke/` verschieben, `docker compose restart erklaerbaer`.
+
 **Symbole:** Stehen im Regeltext Bildsymbole mitten im Satz (z. B. ein
 Blutstropfen für „Blut“), hält der Import an und zeigt eine Galerie
 (`/symbole?spiel=<id>`, auch später über „🔣 Symbole“ im Spiel erreichbar).
@@ -106,6 +112,8 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
   | `ERKLAERBAER_MODELL` | gemma4:e4b | Sprachmodell (Alternative: qwen3:30b-a3b-instruct-2507-q4_K_M) |
   | `CACHE_KB_PRO_TOKEN` | 15 | Cache pro Token des Modells inklusive Sprungpunkte, Grundlage fürs Vorwärmen (gemma4:e4b ~15, qwen3 52) |
   | `KV_CACHE_TYPE` | q8_0 | Genauigkeit des Caches; q4_0 halbiert ihn, liest ~30 % langsamer ein |
+  | `ERKLAERBAER_PIN` | (leer) | PIN für „Spiel entfernen“; leer: Löschen ist aus |
+  | `STIMME` | de_DE-thorsten-high | Piper-Stimme zum Vorlesen; `de_DE-thorsten-medium` ist 4× schneller und klingt etwas flacher |
   | `KONTEXT_TOKENS` | 40960 | Kontextfenster; muss größtes Regelheft (Star Trek ~31k Tokens) + Verlauf + Antwort fassen |
 - **Modell:** `gemma4:e4b` (Standard). Im Vergleich mit 28 Regelfragen aus 12
   Heften 55/56 richtig (56/56 mit den pymupdf4llm-Texten) gegenüber 56/56 für
@@ -119,6 +127,17 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
   PDF-Betrachter.
 - **Whisper** bekommt pro Spiel ein Vokabular aus dem Regelheft (Überschriften,
   Namen), damit es Begriffe wie „Marshal“ richtig erkennt.
+- **Vorlesen:** „🔊 Vorlesen“ unter jeder Antwort und im Kasten „📜 Worum
+  geht's?“. Piper rechnet die Sprache auf der CPU (Stimme `de_DE-thorsten-high`:
+  1,4 s für 15 s Sprache, gemessen auf dem Laptop). Die Seite holt Satz für Satz,
+  der erste Satz kommt nach ~0,4 s. Andere Stimme: `STIMME` in `.env`.
+- **Worum geht's?** Das Modell holt einmal pro Spiel die thematische Einleitung
+  aus dem Regelheft, wörtlich, bei englischen Heften übersetzt. Hat ein Heft keine,
+  schreibt es 2–3 Sätze nach dem Heft. Die App speichert sie als
+  `regelwerke/<id>.einleitung.txt` und schreibt fehlende nach dem Vorwärmen, wenn
+  niemand fragt (2–8 s pro vorgewärmtem Heft). Neu importierte Spiele bekommen ihre
+  innerhalb einer Minute. Eine schlechte Einleitung: Datei löschen oder von Hand
+  ändern, dann `docker compose restart erklaerbaer`.
 - **Prompt** (`tools/ask.py`): nur aus dem Regelheft antworten, umgangssprachliche
   Begriffe zuordnen, wörtlich zitieren, prüfen ob das Zitat die Antwort belegt.
 
@@ -127,7 +146,7 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
 | Pfad | Inhalt |
 |---|---|
 | `app/server.py` | Backend: Spiele, Spracherkennung, Antworten, Import, Symbole, Seitenansicht, Vorwärmen |
-| `app/static/index.html` | Oberfläche: Spielliste, Fragen mit Verlauf, Import |
+| `app/static/index.html` | Oberfläche: Spielliste, Fragen mit Verlauf, Vorlesen, Import, Entfernen |
 | `app/static/seite.html` | Regelheft-Seite als Bild mit markiertem Zitat |
 | `app/static/symbole.html` | Galerie zum Benennen von Bildsymbolen |
 | `tools/neues-spiel.sh`, `tools/pdf_md.py` | PDF mit Text → bereinigtes Markdown (pymupdf4llm) |
@@ -140,7 +159,7 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
 | `regelwerke/` | Regelhefte (nicht im Repository), siehe `regelwerke/README.md` |
 | `sammlung/`, `bgg-sammlung.csv` | Spielesammlung (BGG-Export) und Liste noch fehlender Anleitungen |
 | `logs/fragen.jsonl` | alle gestellten Fragen mit Antwort und Dauer |
-| `models/` | Whisper-Modell |
+| `models/` | Whisper-Modell, Piper-Stimme |
 
 Spiele direkt verlinken (z. B. für QR-Codes in der Schachtel):
 `http://<laptop>:8090/?spiel=colt-express`

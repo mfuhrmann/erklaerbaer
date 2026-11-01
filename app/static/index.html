@@ -87,6 +87,20 @@
     padding: 10px 12px; border-radius: 6px; font-size: .95rem; white-space: pre-wrap;
   }
   .source { display: inline-block; margin-top: 8px; font-size: .95rem; }
+  #delete {
+    margin-top: 40px; padding: 8px 12px; font: inherit; font-size: .9rem; cursor: pointer;
+    border: 2px solid var(--border); border-radius: 10px; background: none; color: var(--muted);
+  }
+  #intro { margin: 0 0 14px; }
+  #intro summary { color: var(--accent); cursor: pointer; }
+  #introtext { white-space: pre-wrap; margin: 8px 0; }
+  button.speak {
+    padding: 6px 12px; font: inherit; font-size: .95rem; cursor: pointer;
+    border: 2px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text);
+  }
+  .turn button.speak { margin: 8px 8px 0 0; }
+  #deleteform { display: flex; gap: 8px; margin-top: 10px; }
+  #deleteform[hidden] { display: none; }
   footer { color: var(--muted); font-size: .85rem; margin-top: 32px; }
 </style>
 </head>
@@ -121,6 +135,11 @@
       <h2 id="title"></h2>
     </div>
     <p class="hint" id="meta"></p>
+    <details id="intro" hidden>
+      <summary>📜 Worum geht's?</summary>
+      <p id="introtext"></p>
+      <button class="speak" id="introspeak" hidden>🔊 Vorlesen</button>
+    </details>
 
     <form id="askform">
       <input id="text" placeholder="Deine Regelfrage …" autocomplete="off" enterkeyhint="send">
@@ -134,6 +153,12 @@
     </div>
     <p id="status"></p>
     <div id="turns"></div>
+    <button id="delete" hidden>🗑️ Spiel entfernen</button>
+    <form id="deleteform" hidden>
+      <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+      <button class="primary">Entfernen</button>
+    </form>
+    <p class="hint" id="deletestatus"></p>
   </section>
 
   <footer>KI-Erklärer – kann sich irren. Im Zweifel gilt das Regelheft.</footer>
@@ -200,6 +225,7 @@ function showStep(id) {
   $("pick").style.display = id ? "none" : "block";
   $("ask").style.display = id ? "block" : "none";
   if (!id) {
+    stopReading();
     renderGames();
     return;
   }
@@ -212,6 +238,13 @@ function showStep(id) {
   $("meta").innerHTML = meta.join(" · ");
   $("turns").replaceChildren();
   $("status").textContent = "";
+  stopReading();
+  $("intro").hidden = true;
+  $("intro").open = false;
+  if (g.einleitung) loadIntro(id);
+  $("deletestatus").textContent = "";
+  $("deleteform").hidden = true;
+  $("pin").value = "";
   $("examples").hidden = false;
   history = [];
   window.scrollTo(0, 0);
@@ -248,7 +281,10 @@ $("search").addEventListener("input", renderGames);
 // While the rulebooks are read in after a start, first questions take longer.
 async function showWarming() {
   try {
-    const { vorwaermen: w } = await (await fetch("/api/status")).json();
+    const { vorwaermen: w, loeschen, vorlesen } = await (await fetch("/api/status")).json();
+    $("delete").hidden = !loeschen;
+    canSpeak = vorlesen;
+    $("introspeak").hidden = !canSpeak;
     $("warming").hidden = !w.running;
     $("warming").textContent = `⏳ Regelhefte werden vorbereitet: ${w.done} von ${w.total} – erste Fragen können etwas länger dauern.`;
     if (w.running) setTimeout(showWarming, 10000);
@@ -297,6 +333,120 @@ $("importform").onsubmit = async (e) => {
     button.disabled = false;
   }
 };
+
+// --- Delete: only with the PIN from .env (ERKLAERBAER_PIN); without one the
+// button stays hidden. The server keeps the files in regelwerke/.papierkorb/.
+
+$("delete").onclick = () => {
+  const g = allGames.find((x) => x.id === game);
+  $("deleteform").hidden = false;
+  $("deletestatus").textContent = `„${g.name}“ wirklich entfernen? Zum Bestätigen die PIN eingeben.`;
+  $("pin").focus();
+};
+
+$("deleteform").onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const response = await fetch(`/api/games/${encodeURIComponent(game)}`,
+      { method: "DELETE", headers: { "X-PIN": $("pin").value } });
+    if (!response.ok) throw new Error((await response.json()).detail);
+    try { localStorage.setItem("recent", JSON.stringify(recentIds().filter((x) => x !== game))); } catch {}
+    window.history.replaceState(null, "", location.pathname);
+    await loadGames();
+  } catch (err) {
+    $("pin").value = "";
+    $("deletestatus").textContent = `❌ ${err.message}`;
+  }
+};
+
+// --- Introduction: what the game is about, from its rulebook.
+
+async function loadIntro(id) {
+  try {
+    const response = await fetch(`/api/games/${encodeURIComponent(id)}/einleitung`);
+    if (!response.ok || game !== id) return;
+    $("introtext").textContent = (await response.json()).text;
+    $("intro").hidden = false;
+  } catch {}
+}
+
+$("introspeak").onclick = () => readAloud($("introtext").textContent, $("introspeak"));
+
+// --- Reading aloud: the server (Piper) speaks one piece at a time; the next
+// piece is fetched while the current one plays. Web Audio, because iPhones
+// only play sound started by a tap, and the AudioContext is created in it.
+
+let canSpeak = false;
+let player = null;  // { ctx, button } while something is read
+
+function addSpeakButton(turn) {
+  if (!canSpeak) return;
+  const b = document.createElement("button");
+  b.className = "speak";
+  b.textContent = "🔊 Vorlesen";
+  b.onclick = () => readAloud(turn.querySelector(".answer").textContent, b);
+  turn.querySelector(".quote").before(b);
+}
+
+// First piece one sentence (quick start), then sentences joined up to ~250 characters.
+function pieces(text) {
+  const sentences = (text.replace(/[*#_`]/g, "").match(/[^.!?…]+(?:[.!?…]+["“”»«]?|$)/g) || [])
+    .map((x) => x.trim()).filter(Boolean);
+  const result = [];
+  for (const sentence of sentences) {
+    const last = result.length > 1 ? result.length - 1 : -1;
+    if (last >= 0 && result[last].length + sentence.length < 250) result[last] += " " + sentence;
+    else result.push(sentence);
+  }
+  return result;
+}
+
+async function speech(ctx, text) {
+  const response = await fetch("/api/vorlesen", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+  });
+  if (!response.ok) throw new Error((await response.json()).detail);
+  return ctx.decodeAudioData(await response.arrayBuffer());
+}
+
+function stopReading() {
+  if (!player) return;
+  player.ctx.close();
+  player.button.textContent = "🔊 Vorlesen";
+  player = null;
+}
+
+async function readAloud(text, button) {
+  const again = player?.button === button;
+  stopReading();
+  if (again) return;  // second tap stops
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const mine = { ctx, button };
+  player = mine;
+  button.textContent = "⏹ Stopp";
+  const parts = pieces(text);
+  let at = 0;
+  try {
+    let next = speech(ctx, parts[0]);
+    for (let i = 0; i < parts.length; i++) {
+      const buffer = await next;
+      if (player !== mine) return;
+      if (i + 1 < parts.length) next = speech(ctx, parts[i + 1]);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      at = Math.max(at, ctx.currentTime + 0.05);
+      source.start(at);
+      at += buffer.duration;
+    }
+    setTimeout(() => { if (player === mine) stopReading(); }, (at - ctx.currentTime) * 1000 + 300);
+  } catch (err) {
+    if (player === mine) {
+      stopReading();
+      $("status").textContent = `Vorlesen geht gerade nicht: ${err.message}`;
+    }
+  }
+}
 
 // --- Recording: record with MediaRecorder, convert to 16 kHz mono WAV for whisper.
 // Browsers only allow the microphone on HTTPS (or on the laptop itself).
@@ -433,6 +583,7 @@ async function ask(question) {
       show(turn, full);
     }
     history = [...history, { question, answer: full }].slice(-2);
+    addSpeakButton(turn);
     linkSource(turn, full);
   } catch {
     $("status").textContent = "Keine Antwort erhalten – bitte nochmal versuchen.";

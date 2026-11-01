@@ -10,4 +10,5 @@ dependencies = [
     "python-multipart>=0.0.20",
     "pymupdf>=2.0",
     "numpy>=2",
+    "piper-tts>=1.8",
 ]

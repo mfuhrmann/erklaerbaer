@@ -64,6 +64,23 @@ services:
         https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin
     restart: "no"
 
+  # One-shot: download the voice for reading aloud (Piper) unless it is there already.
+  stimme-modell:
+    image: curlimages/curl:8.11.1
+    user: "1000:1000"
+    volumes:
+      - ./models:/models
+    environment:
+      STIMME: ${STIMME:-de_DE-thorsten-high}
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        set -e; cd /models;
+        voice=$$STIMME; speaker=$${voice#*-}; quality=$${speaker#*-}; speaker=$${speaker%-*};
+        url=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/$$speaker/$$quality;
+        for ext in onnx onnx.json; do test -f $$voice.$$ext || curl -fL -o $$voice.$$ext $$url/$$voice.$$ext; done
+    restart: "no"
+
   whisper:
     image: ghcr.io/ggml-org/whisper.cpp:main-vulkan
     <<: *gpu
@@ -82,7 +99,13 @@ services:
     restart: unless-stopped
     # Imported rulebooks belong to the laptop user, not root.
     user: "${ERKLAERBAER_UID:-1000}:${ERKLAERBAER_GID:-1000}"
-    depends_on: [ollama, whisper]
+    depends_on:
+      ollama:
+        condition: service_started
+      whisper:
+        condition: service_started
+      stimme-modell:
+        condition: service_completed_successfully
     environment:
       OLLAMA_URL: http://ollama:11434
       WHISPER_URL: http://whisper:8080
@@ -96,10 +119,16 @@ services:
       # gross | alle | keine | liste (regelwerke/vorwaermen.txt)
       VORWAERMEN: ${VORWAERMEN:-gross}
       VORWAERMEN_PAUSE: ${VORWAERMEN_PAUSE:-300}
+      # PIN for "Spiel entfernen" on the web page; empty: nobody can delete.
+      ERKLAERBAER_PIN: ${ERKLAERBAER_PIN:-}
+      # Piper voice for reading aloud (models/<STIMME>.onnx); de_DE-thorsten-medium
+      # is 4x faster and sounds a little flatter.
+      STIMME: ${STIMME:-de_DE-thorsten-high}
     volumes:
       # Writable: imported rulebooks are stored here.
       - ./regelwerke:/srv/regelwerke
       - ./logs:/srv/logs
+      - ./models:/srv/models:ro
     ports:
       - 8090:8090
 

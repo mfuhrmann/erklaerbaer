@@ -3,22 +3,26 @@
 Run: uv run uvicorn app.server:app --host 0.0.0.0 --port 8090
 """
 import asyncio
+import hmac
 import html
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 import uuid
+import wave
 from collections import Counter
 from pathlib import Path
 
 import httpx
 import pymupdf
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -33,6 +37,8 @@ RULES_DIR = ROOT / "regelwerke"
 LOG_FILE = ROOT / "logs" / "fragen.jsonl"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 WHISPER_URL = os.environ.get("WHISPER_URL", "http://127.0.0.1:8081")
+# PIN to delete games on the web page; empty: nobody can delete.
+DELETE_PIN = os.environ.get("ERKLAERBAER_PIN", "").strip()
 
 # Same sampling as tools/ask.py; the token limit stops runaway answers.
 OPTIONS = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "num_predict": 1024}
@@ -81,6 +87,7 @@ def load_game(path, names):
     name = names.get(game_id, game_id.replace("-", " ").title())
     rules = path.read_text(encoding="utf-8")
     pdf = path.with_suffix(".pdf")
+    intro = path.with_suffix(".einleitung.txt")
     return {
         "id": game_id,
         "name": name,
@@ -92,6 +99,8 @@ def load_game(path, names):
         # 4.03 for English; the mean is off by about 9% either way.
         "tokens": int(len(SYSTEM_PROMPT.format(rules=rules)) / 3.7),
         "pdf": pdf if pdf.exists() else None,
+        # What the game is about, read aloud on request (write_intros).
+        "intro": intro.read_text(encoding="utf-8") if intro.exists() else None,
         # Word runs of every PDF page, to find the page a quote is from.
         "pages": [words(page_text(str(pdf), p)) for p in range(1, page_count(str(pdf)) + 1)]
         if pdf.exists() else [],
@@ -171,6 +180,11 @@ async def warm(client, game):
     # last one fell just past where a real question starts, so every first
     # question re-read ~2000 tokens (8 s instead of 0.3 s, Sky Team).
     payload = chat_payload(game, "", stream=False, options={**OPTIONS, "num_predict": 1})
+    await post_when_idle(client, payload)
+
+
+async def post_when_idle(client, payload):
+    """Background request to Ollama that stops and starts again when a guest asks."""
     while True:
         while active_questions:
             await asyncio.sleep(1)
@@ -180,8 +194,9 @@ async def warm(client, game):
         done, _ = await asyncio.wait({request, interrupt}, return_when=asyncio.FIRST_COMPLETED)
         interrupt.cancel()
         if request in done:
-            request.result().raise_for_status()
-            return
+            response = request.result()
+            response.raise_for_status()
+            return response.json()
         # Closing the connection makes Ollama stop after its current batch.
         request.cancel()
         print(f"vorwärmen unterbrochen: {game['name']}", flush=True)
@@ -194,6 +209,8 @@ warm_progress = {"done": 0, "total": 0, "running": True}
 
 
 async def warm_and_report(client, game_id):
+    if game_id not in GAMES:  # deleted meanwhile
+        return
     started = time.time()
     await warm(client, GAMES[game_id])
     print(f"vorgewärmt: {GAMES[game_id]['name']} ({time.time() - started:.0f} s)", flush=True)
@@ -222,7 +239,8 @@ async def warm_up():
                 if time.time() - last_question < REFRESH_SECONDS:
                     continue
                 for game_id in list(warm_ids):
-                    await warm(client, GAMES[game_id])
+                    if game_id in GAMES:
+                        await warm(client, GAMES[game_id])
 
     asyncio.create_task(run())
 
@@ -243,13 +261,13 @@ async def warm_imported(game_id):
 
 @app.get("/api/status")
 def status():
-    return {"vorwaermen": warm_progress}
+    return {"vorwaermen": warm_progress, "loeschen": bool(DELETE_PIN), "vorlesen": VOICE_FILE.exists()}
 
 
 @app.get("/api/games")
 def games():
     return [{"id": g["id"], "name": g["name"], "pdf": g["pdf"] is not None, "lang": g["lang"],
-             "seiten": len(g["pages"])}
+             "seiten": len(g["pages"]), "einleitung": g["intro"] is not None}
             for g in GAMES.values()]
 
 
@@ -346,6 +364,114 @@ def quote_page(game_id: str, quote: str):
     if not quote_words or best_hits < max(2, len(quote_words) // 3):
         best = None
     return {"page": best}
+
+
+# --- Introductions: what a game is about, taken once from its rulebook
+# (word for word where it has one) and stored as <id>.einleitung.txt.
+
+INTRO_QUESTION = """Ausnahmsweise keine Regelfrage: Gib die thematische Einleitung des Regelwerks wieder, also den Text, der erzählt, worum es im Spiel geht (Geschichte, Schauplatz, Rolle der Spieler) – nicht die Regeln, nicht das Spielmaterial.
+- Übernimm den Text möglichst wörtlich. Ist das Regelwerk nicht auf Deutsch, übersetze ihn ins Deutsche.
+- Gibt es keine solche Einleitung, beschreibe in 2–3 Sätzen nach dem Regelwerk, worum es thematisch geht.
+- Höchstens 120 Wörter. Antworte nur mit diesem Text: kein "Antwort:", kein "Regel:", keine Überschrift, keine Anführungszeichen."""
+
+
+def clean_intro(text):
+    text = re.sub(r"^\s*Antwort:\s*", "", text.split("Regel:")[0]).strip()
+    return text.strip('"„“').strip()
+
+
+async def write_intros():
+    """Write the missing introductions, warm rulebooks first (they answer in
+    seconds), one at a time and giving way to questions. Runs on: imported
+    games get theirs within a minute."""
+    failed = set()
+    async with httpx.AsyncClient(timeout=600) as client:
+        while True:
+            await asyncio.sleep(60)
+            if warm_progress["running"]:
+                continue
+            missing = sorted((g for g in GAMES.values() if g["intro"] is None and g["id"] not in failed),
+                             key=lambda g: g["id"] not in warm_ids)
+            for game in missing:
+                if GAMES.get(game["id"]) is not game:  # deleted or converted again meanwhile
+                    continue
+                started = time.time()
+                payload = chat_payload(game, INTRO_QUESTION, stream=False,
+                                       options={**OPTIONS, "temperature": 0.3, "num_predict": 400})
+                try:
+                    text = clean_intro((await post_when_idle(client, payload))["message"]["content"])
+                except (httpx.HTTPError, KeyError) as error:
+                    print(f"Einleitung fehlgeschlagen: {game['name']}: {error!r}", flush=True)
+                    failed.add(game["id"])
+                    continue
+                if GAMES.get(game["id"]) is not game:
+                    continue
+                if not text:
+                    failed.add(game["id"])
+                    continue
+                (RULES_DIR / f"{game['id']}.einleitung.txt").write_text(text + "\n", encoding="utf-8")
+                game["intro"] = text
+                print(f"Einleitung: {game['name']} ({time.time() - started:.0f} s)", flush=True)
+
+
+@app.on_event("startup")
+async def start_intros():
+    asyncio.create_task(write_intros())
+    # Loading the voice takes ~1 s; done now, the first guest doesn't wait.
+    if VOICE_FILE.exists():
+        asyncio.create_task(asyncio.to_thread(preload_voice))
+
+
+@app.get("/api/games/{game_id}/einleitung")
+def intro(game_id: str):
+    text = get_game(game_id)["intro"]
+    if text is None:
+        raise HTTPException(404, "Noch keine Einleitung")
+    return {"text": text}
+
+
+# --- Reading aloud: Piper turns answers and introductions into speech on the
+# CPU (thorsten-high: 1.4 s for 15 s of speech). The page asks sentence by
+# sentence, so the first one plays after a fraction of a second.
+
+VOICE_FILE = ROOT / "models" / f"{os.environ.get('STIMME', 'de_DE-thorsten-high')}.onnx"
+voice = None
+voice_lock = threading.Lock()  # one synthesis at a time; keeps the CPU free for the rest
+
+
+def load_voice():
+    global voice
+    if voice is None:
+        from piper import PiperVoice
+        voice = PiperVoice.load(str(VOICE_FILE))
+
+
+def preload_voice():
+    with voice_lock:
+        load_voice()
+
+
+def synthesize(text):
+    with voice_lock:
+        load_voice()
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav:
+            voice.synthesize_wav(text, wav)
+        return buffer.getvalue()
+
+
+class Speech(BaseModel):
+    text: str
+
+
+@app.post("/api/vorlesen")
+async def read_aloud(speech: Speech):
+    if not VOICE_FILE.exists():
+        raise HTTPException(503, "Keine Stimme installiert.")
+    text = speech.text.strip()[:1000]
+    if not text:
+        raise HTTPException(400, "Kein Text.")
+    return Response(await asyncio.to_thread(synthesize, text), media_type="audio/wav")
 
 
 # --- Import: drop a rulebook PDF in from any device (e.g. a phone at the table).
@@ -539,6 +665,51 @@ async def import_rulebook(pdf: UploadFile, name: str = Form(...)):
     imports[job] = {"status": "wartet", "game": game_id, "message": "", "name": name}
     asyncio.create_task(run_import(job, game_id, name, path))
     return {"job": job, "game": game_id}
+
+
+# Wrong PINs: after 5 the deletion is locked for 5 minutes, so guests on the
+# network can't try all 10,000 four-digit PINs.
+wrong_pins = {"count": 0, "until": 0.0}
+
+
+def check_pin(pin):
+    if not DELETE_PIN:
+        raise HTTPException(403, "Löschen ist aus (keine PIN in .env).")
+    if time.time() < wrong_pins["until"]:
+        raise HTTPException(429, "Zu viele falsche PINs – bitte in 5 Minuten nochmal.")
+    if not hmac.compare_digest(pin.strip().encode(), DELETE_PIN.encode()):
+        wrong_pins["count"] += 1
+        if wrong_pins["count"] >= 5:
+            wrong_pins.update(count=0, until=time.time() + 300)
+        raise HTTPException(403, "Falsche PIN.")
+    wrong_pins["count"] = 0
+
+
+@app.delete("/api/games/{game_id}")
+def delete_game(game_id: str, pin: str = Header("", alias="X-PIN")):
+    """Move all files of a game to regelwerke/.papierkorb/, so a deletion by
+    mistake can be undone by moving them back (and restarting)."""
+    check_pin(pin)
+    if any(state["game"] == game_id and state["status"] in ("wartet", "läuft", "symbole")
+           for state in imports.values()):
+        raise HTTPException(409, "Das Spiel wird gerade importiert.")
+    game = get_game(game_id)
+    trash = RULES_DIR / ".papierkorb" / f"{game_id}-{time.strftime('%Y%m%d-%H%M%S')}"
+    trash.mkdir(parents=True)
+    # Ids are slugs without dots, so "<id>.*" only matches this game's files.
+    for path in RULES_DIR.glob(f"{game_id}.*"):
+        shutil.move(path, trash / path.name)
+    if (SYMBOL_DIR / game_id).exists():
+        shutil.move(SYMBOL_DIR / game_id, trash / "symbole")
+    names = game_names()
+    if names.pop(game_id, None) is not None:
+        (RULES_DIR / "spiele.json").write_text(
+            json.dumps(dict(sorted(names.items())), ensure_ascii=False, indent=2), encoding="utf-8")
+    del GAMES[game_id]
+    if game_id in warm_ids:
+        warm_ids.remove(game_id)
+    print(f"gelöscht: {game['name']} (Dateien in {trash.relative_to(ROOT)})", flush=True)
+    return {"ok": True}
 
 
 @app.get("/api/import/{job}")

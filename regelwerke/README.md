@@ -14,4 +14,6 @@ Pro Spiel entstehen hier:
 | `<id>.md` | bereinigter Text, den das Modell liest |
 | `<id>.roh.md` | Rohausgabe der Umwandlung (ältere Spiele: `<id>.docling.md`) |
 | `<id>.symbole.json` | Namen der Bildsymbole aus der Galerie |
+| `<id>.einleitung.txt` | „Worum geht's?“: thematische Einleitung aus dem Regelheft |
+| `.papierkorb/` | entfernte Spiele („🗑️ Spiel entfernen“), zum Zurückholen |
 | `spiele.json` | Anzeigenamen aller Spiele |
