@@ -99,6 +99,8 @@ def load_game(path, names):
         # 4.03 for English; the mean is off by about 9% either way.
         "tokens": int(len(SYSTEM_PROMPT.format(rules=rules)) / 3.7),
         "pdf": pdf if pdf.exists() else None,
+        # When the game was added: its oldest file (a new conversion keeps the upload).
+        "added": int(min(f.stat().st_mtime for f in path.parent.glob(f"{game_id}.*"))),
         # What the game is about, read aloud on request (write_intros).
         "intro": intro.read_text(encoding="utf-8") if intro.exists() else None,
         # Word runs of every PDF page, to find the page a quote is from.
@@ -199,7 +201,7 @@ async def post_when_idle(client, payload):
             return response.json()
         # Closing the connection makes Ollama stop after its current batch.
         request.cancel()
-        print(f"vorwärmen unterbrochen: {game['name']}", flush=True)
+        print("Hintergrund-Anfrage unterbrochen: ein Gast fragt", flush=True)
 
 
 # Ids of the rulebooks kept warm; imports add to it (warm_imported).
@@ -209,11 +211,12 @@ warm_progress = {"done": 0, "total": 0, "running": True}
 
 
 async def warm_and_report(client, game_id):
-    if game_id not in GAMES:  # deleted meanwhile
+    game = GAMES.get(game_id)
+    if game is None:  # deleted meanwhile
         return
     started = time.time()
-    await warm(client, GAMES[game_id])
-    print(f"vorgewärmt: {GAMES[game_id]['name']} ({time.time() - started:.0f} s)", flush=True)
+    await warm(client, game)
+    print(f"vorgewärmt: {game['name']} ({time.time() - started:.0f} s)", flush=True)
 
 
 @app.on_event("startup")
@@ -267,7 +270,9 @@ def status():
 @app.get("/api/games")
 def games():
     return [{"id": g["id"], "name": g["name"], "pdf": g["pdf"] is not None, "lang": g["lang"],
-             "seiten": len(g["pages"]), "einleitung": g["intro"] is not None}
+             "seiten": len(g["pages"]), "neu": g["added"],
+             # Sent with the list (~80 KB for 110 games): the game page shows it at once.
+             "einleitung": g["intro"]}
             for g in GAMES.values()]
 
 
@@ -420,14 +425,6 @@ async def start_intros():
     # Loading the voice takes ~1 s; done now, the first guest doesn't wait.
     if VOICE_FILE.exists():
         asyncio.create_task(asyncio.to_thread(preload_voice))
-
-
-@app.get("/api/games/{game_id}/einleitung")
-def intro(game_id: str):
-    text = get_game(game_id)["intro"]
-    if text is None:
-        raise HTTPException(404, "Noch keine Einleitung")
-    return {"text": text}
 
 
 # --- Reading aloud: Piper turns answers and introductions into speech on the
@@ -686,7 +683,7 @@ def check_pin(pin):
 
 
 @app.delete("/api/games/{game_id}")
-def delete_game(game_id: str, pin: str = Header("", alias="X-PIN")):
+async def delete_game(game_id: str, pin: str = Header("", alias="X-PIN")):
     """Move all files of a game to regelwerke/.papierkorb/, so a deletion by
     mistake can be undone by moving them back (and restarting)."""
     check_pin(pin)

@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <title>Erklärbär</title>
 <style>
   :root {
@@ -18,12 +18,13 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0; font: 17px/1.5 system-ui, sans-serif;
     background: var(--bg); color: var(--text);
   }
   main { max-width: 640px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 1.6rem; margin: 8px 0 4px; }
+  h1 { font-size: 1.5rem; margin: 8px 0 4px; }
   .sub { color: var(--muted); margin: 0 0 16px; }
   .hint { color: var(--muted); font-size: .95rem; margin: 6px 0; }
   a { color: var(--accent); }
@@ -39,7 +40,17 @@
   button:disabled { opacity: .5; }
 
   /* --- Step 1: pick a game --- */
-  #search { width: 100%; position: sticky; top: 8px; z-index: 1; }
+  /* Header like on the game page: name, menu (import) and the search stay on top. */
+  .top.start { flex-wrap: wrap; row-gap: 10px; }
+  .top.start h1 { flex: 1; margin: 0; }
+  #warming, #search { flex-basis: 100%; }
+  #warming { font-size: .85rem; color: var(--muted); }
+  .progress { height: 4px; margin-bottom: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+  #warmbar { height: 100%; width: 0; background: var(--accent); transition: width .5s; }
+  .menutitle { margin: 6px 8px 0; font-weight: 700; }
+  .menu .hint { margin: 6px 8px; }
+  .sub { margin: 14px 0 0; }
+  .letter { margin: 10px 0 0; font-weight: 700; color: var(--accent); }
   .label { font-size: .85rem; font-weight: 700; color: var(--muted); margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
@@ -57,111 +68,161 @@
     flex: none; font-size: .7rem; font-weight: 700; padding: 1px 5px;
     border: 1px solid var(--muted); border-radius: 4px; color: var(--muted);
   }
-  #import { margin-top: 32px; }
-  #import summary { color: var(--accent); cursor: pointer; }
-  #importform { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  #importform { display: flex; flex-direction: column; gap: 8px; padding: 6px 8px 0; }
 
-  /* --- Step 2: ask --- */
-  #ask { display: none; }
-  .bar { display: flex; align-items: center; gap: 10px; margin: 4px 0 4px; }
-  #back {
-    flex: none; padding: 8px 12px; font: inherit; border: 2px solid var(--border);
-    border-radius: 10px; background: var(--card); color: var(--text); cursor: pointer;
+  /* --- Step 2: a conversation with the bear. Fixed: header on top, input at
+     the bottom (thumb reach); everything else is a message in between. --- */
+  .top {
+    position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+    margin: -16px -16px 0; padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--border);
   }
-  #title { font-size: 1.35rem; margin: 0; line-height: 1.25; }
-  #meta { margin: 0 0 14px; }
-  #askform { display: flex; gap: 8px; }
-  #talk {
-    width: 100%; margin-top: 10px; padding: 16px; border: none; border-radius: 12px;
-    background: var(--quote-bg); color: var(--text); font: inherit; font-weight: 600;
-    touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
+  .top > button {
+    flex: none; width: 44px; height: 44px; font: inherit; font-size: 1.2rem; cursor: pointer;
+    border: 2px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text);
   }
-  #talk.recording { background: var(--rec); color: #fff; }
-  #examples { margin-top: 14px; }
-  #status { color: var(--muted); min-height: 1.5em; margin: 12px 0 4px; }
-  .turn { border-top: 1px solid var(--border); padding: 14px 0 6px; }
-  .question { font-weight: 700; margin: 0 0 6px; }
-  .answer { white-space: pre-wrap; margin: 0 0 8px; }
-  .quote {
-    background: var(--quote-bg); border-left: 4px solid var(--accent);
-    padding: 10px 12px; border-radius: 6px; font-size: .95rem; white-space: pre-wrap;
+  #title { flex: 1; min-width: 0; font-size: 1.2rem; margin: 0; line-height: 1.25; }
+  .menu {
+    position: absolute; right: 16px; top: calc(100% + 4px); width: min(320px, calc(100vw - 32px));
+    display: flex; flex-direction: column; padding: 6px; background: var(--card);
+    border: 2px solid var(--border); border-radius: 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
   }
-  .source { display: inline-block; margin-top: 8px; font-size: .95rem; }
-  #delete {
-    margin-top: 40px; padding: 8px 12px; font: inherit; font-size: .9rem; cursor: pointer;
-    border: 2px solid var(--border); border-radius: 10px; background: none; color: var(--muted);
+  .menu > a, .menu > button {
+    padding: 12px; font: inherit; text-align: left; color: var(--text); text-decoration: none;
+    background: none; border: none; border-radius: 8px; cursor: pointer;
   }
-  #intro { margin: 0 0 14px; }
-  #intro summary { color: var(--accent); cursor: pointer; }
-  #introtext { white-space: pre-wrap; margin: 8px 0; }
+  .menu > a:hover, .menu > button:hover { background: var(--quote-bg); }
+  #deleteform { padding: 0 8px 8px; }
+  .row { display: flex; gap: 8px; }
+  #chat { display: flex; flex-direction: column; gap: 12px; padding: 14px 0 calc(var(--composer, 170px) + 12px); }
+  .msg { margin: 0; padding: 12px 14px; border-radius: 16px; max-width: 92%; }
+  .msg.bear { align-self: flex-start; background: var(--card); border: 2px solid var(--border); border-top-left-radius: 4px; }
+  .msg.me {
+    align-self: flex-end; background: var(--accent); color: var(--accent-text);
+    border-top-right-radius: 4px; font-weight: 600; white-space: pre-wrap;
+  }
+  .who { margin: 0 0 4px; font-weight: 700; }
+  #introtext { margin: 0; white-space: pre-wrap; }
+  .clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .muted { color: var(--muted); }
+  .disclaimer { color: var(--muted); font-size: .85rem; margin: 0; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+  .actions:empty { display: none; }
+  button.link { padding: 0; font: inherit; background: none; border: none; color: var(--accent); cursor: pointer; }
   button.speak {
     padding: 6px 12px; font: inherit; font-size: .95rem; cursor: pointer;
     border: 2px solid var(--border); border-radius: 999px; background: var(--card); color: var(--text);
   }
-  .turn button.speak { margin: 8px 8px 0 0; }
-  #deleteform { display: flex; gap: 8px; margin-top: 10px; }
-  #deleteform[hidden] { display: none; }
+  #turns { display: flex; flex-direction: column; gap: 16px; }
+  .turn { display: flex; flex-direction: column; gap: 8px; scroll-margin-top: 76px; }
+  .answer { white-space: pre-wrap; margin: 0; }
+  .answer.waiting { color: var(--muted); }
+  .quote {
+    margin-top: 10px; background: var(--quote-bg); border-left: 4px solid var(--accent);
+    padding: 10px 12px; border-radius: 6px; font-size: .95rem; white-space: pre-wrap;
+  }
+  .source { font-size: .95rem; }
+  #composer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; background: var(--bg);
+    border-top: 1px solid var(--border); padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  }
+  #composer > * { max-width: 608px; margin-left: auto; margin-right: auto; }
+  #status { color: var(--muted); font-size: .95rem; margin-bottom: 6px; }
+  #status:empty { display: none; }
+  #askform { display: flex; gap: 8px; }
+  #talk {
+    display: block; width: 100%; margin-top: 8px; padding: 14px; border: none; border-radius: 12px;
+    background: var(--quote-bg); color: var(--text); font: inherit; font-weight: 600;
+    touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer;
+  }
+  #talk.recording { background: var(--rec); color: #fff; }
+  #talkhint { margin: 6px auto 0; }
   footer { color: var(--muted); font-size: .85rem; margin-top: 32px; }
 </style>
 </head>
 <body>
 <main>
   <section id="pick">
-    <h1>🐻 Erklärbär</h1>
+    <header class="top start">
+      <h1>🐻 Erklärbär</h1>
+      <button id="startmenubutton" aria-label="Menü" aria-expanded="false">⋯</button>
+      <div class="menu" id="startmenu" hidden>
+        <p class="menutitle">➕ Anleitung importieren</p>
+        <form id="importform">
+          <input id="importname" placeholder="Name des Spiels" autocomplete="off" required>
+          <input id="importfile" type="file" accept=".pdf,application/pdf" required>
+          <button class="primary">Hochladen</button>
+        </form>
+        <p class="hint" id="importstatus">PDF der Spielanleitung, am besten deutsch. Das Umwandeln dauert je nach Heft 10 s bis einige Minuten.</p>
+      </div>
+      <div id="warming" hidden>
+        <div class="progress"><div id="warmbar"></div></div>
+        <span id="warmtext"></span>
+      </div>
+      <input id="search" type="search" placeholder="🔍 Spiel suchen …" autocomplete="off">
+    </header>
     <p class="sub">Für welches Spiel brauchst du eine Regel?</p>
-    <p class="hint" id="warming" hidden></p>
-    <input id="search" type="search" placeholder="🔍 Spiel suchen …" autocomplete="off">
     <div id="recentbox">
       <p class="label">Zuletzt gewählt</p>
       <div class="chips" id="recent"></div>
     </div>
+    <div id="newbox">
+      <p class="label">Neu dazugekommen</p>
+      <div class="list" id="newgames"></div>
+    </div>
     <p class="label" id="listlabel"></p>
     <div class="list" id="games"></div>
-
-    <details id="import">
-      <summary>➕ Anleitung importieren</summary>
-      <form id="importform">
-        <input id="importname" placeholder="Name des Spiels" autocomplete="off" required>
-        <input id="importfile" type="file" accept=".pdf,application/pdf" required>
-        <button class="primary">Hochladen</button>
-      </form>
-      <p class="hint" id="importstatus">PDF der Spielanleitung, am besten deutsch. Das Umwandeln dauert je nach Heft 10 s bis einige Minuten.</p>
-    </details>
   </section>
 
-  <section id="ask">
-    <div class="bar">
-      <button id="back">← Spiele</button>
+  <section id="ask" hidden>
+    <header class="top">
+      <button id="back" aria-label="Zurück zur Spielliste">←</button>
       <h2 id="title"></h2>
-    </div>
-    <p class="hint" id="meta"></p>
-    <details id="intro" hidden>
-      <summary>📜 Worum geht's?</summary>
-      <p id="introtext"></p>
-      <button class="speak" id="introspeak" hidden>🔊 Vorlesen</button>
-    </details>
+      <span class="lang" id="titlelang" title="Regelheft auf Englisch" hidden>EN</span>
+      <button id="menubutton" aria-label="Menü" aria-expanded="false">⋯</button>
+      <div class="menu" id="menu" hidden>
+        <a id="menupdf" target="_blank" rel="noopener">📄 Regelheft ansehen</a>
+        <a id="menusymbols">🔣 Symbole benennen</a>
+        <button id="delete" hidden>🗑️ Spiel entfernen</button>
+        <form id="deleteform" hidden>
+          <p class="hint" id="deletestatus"></p>
+          <div class="row">
+            <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+            <button class="primary">Entfernen</button>
+          </div>
+        </form>
+      </div>
+    </header>
 
-    <form id="askform">
-      <input id="text" placeholder="Deine Regelfrage …" autocomplete="off" enterkeyhint="send">
-      <button class="primary">Fragen</button>
-    </form>
-    <button id="talk" hidden>🎤 Gedrückt halten und sprechen</button>
-    <p class="hint" id="talkhint" hidden></p>
-    <div id="examples">
-      <p class="label">Zum Beispiel</p>
-      <div class="chips"></div>
+    <div id="chat">
+      <div class="msg bear" id="intro">
+        <p class="who">🐻 Worum geht's?</p>
+        <p id="introtext"></p>
+        <div class="actions">
+          <button class="link" id="intromore" hidden>mehr</button>
+          <button class="speak" id="introspeak" hidden>🔊 Vorlesen</button>
+        </div>
+      </div>
+      <p class="hint" id="enhint" hidden>Das Regelheft ist auf Englisch – der Bär antwortet trotzdem auf Deutsch.</p>
+      <p class="disclaimer">KI-Erklärer – kann sich irren. Im Zweifel gilt das Regelheft.</p>
+      <div id="examples">
+        <p class="label">Zum Beispiel</p>
+        <div class="chips"></div>
+      </div>
+      <div id="turns"></div>
     </div>
-    <p id="status"></p>
-    <div id="turns"></div>
-    <button id="delete" hidden>🗑️ Spiel entfernen</button>
-    <form id="deleteform" hidden>
-      <input id="pin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
-      <button class="primary">Entfernen</button>
-    </form>
-    <p class="hint" id="deletestatus"></p>
+
+    <div id="composer">
+      <p id="status"></p>
+      <form id="askform">
+        <input id="text" placeholder="Deine Regelfrage …" autocomplete="off" enterkeyhint="send">
+        <button class="primary" aria-label="Fragen">➤</button>
+      </form>
+      <button id="talk" hidden>🎤 Gedrückt halten und sprechen</button>
+      <p class="hint" id="talkhint" hidden></p>
+    </div>
   </section>
 
-  <footer>KI-Erklärer – kann sich irren. Im Zweifel gilt das Regelheft.</footer>
+  <footer id="pagefooter">KI-Erklärer – kann sich irren. Im Zweifel gilt das Regelheft.</footer>
 </main>
 
 <script>
@@ -206,49 +267,108 @@ function gameButton(g, className) {
   return b;
 }
 
+const NEW_DAYS = 14;
+
+// First letter for the A–Z headings; the heading "#" holds digits and signs.
+const letterOf = (g) => {
+  const c = normalize(g.name).charAt(0).toUpperCase();
+  return c >= "A" && c <= "Z" ? c : "#";
+};
+
 function renderGames() {
   const query = normalize($("search").value.trim());
   const shown = query ? allGames.filter((g) => normalize(g.name).includes(query)) : allGames;
   const recent = recentIds().map((id) => allGames.find((g) => g.id === id)).filter(Boolean);
   $("recentbox").hidden = Boolean(query) || !recent.length;
   $("recent").replaceChildren(...recent.map((g) => gameButton(g, "chip")));
+  const since = Date.now() / 1000 - NEW_DAYS * 86400;
+  const fresh = allGames.filter((g) => g.neu > since).sort((a, b) => b.neu - a.neu).slice(0, 6);
+  $("newbox").hidden = Boolean(query) || !fresh.length;
+  $("newgames").replaceChildren(...fresh.map((g) => gameButton(g, "game")));
   $("listlabel").textContent = query
     ? (shown.length ? `${shown.length} Treffer` : "Kein Spiel gefunden")
     : `Alle ${allGames.length} Spiele`;
-  $("games").replaceChildren(...shown.map((g) => gameButton(g, "game")));
+  const items = [];
+  let letter = null;
+  for (const g of shown) {
+    if (!query && letterOf(g) !== letter) {
+      letter = letterOf(g);
+      const heading = document.createElement("p");
+      heading.className = "letter";
+      heading.textContent = letter;
+      items.push(heading);
+    }
+    items.push(gameButton(g, "game"));
+  }
+  $("games").replaceChildren(...items);
 }
 
 // --- Switching between the two steps; the phone's back button returns to the list.
 
 function showStep(id) {
   game = id;
-  $("pick").style.display = id ? "none" : "block";
-  $("ask").style.display = id ? "block" : "none";
+  stopReading();
+  closeMenu();
+  $("pick").hidden = Boolean(id);
+  $("ask").hidden = !id;
+  $("pagefooter").hidden = Boolean(id);
   if (!id) {
-    stopReading();
     renderGames();
     return;
   }
   const g = allGames.find((x) => x.id === id);
   $("title").textContent = g.name;
-  const meta = [];
-  if (g.pdf) meta.push(`<a href="/seite?spiel=${encodeURIComponent(id)}&s=1" target="_blank" rel="noopener">📄 Regelheft ansehen</a>`);
-  if (g.lang === "en") meta.push("Regelheft auf Englisch – Antworten kommen trotzdem auf Deutsch.");
-  if (g.pdf) meta.push(`<a href="/symbole?spiel=${encodeURIComponent(id)}">🔣 Symbole</a>`);
-  $("meta").innerHTML = meta.join(" · ");
+  $("titlelang").hidden = $("enhint").hidden = g.lang !== "en";
+  $("menupdf").hidden = $("menusymbols").hidden = !g.pdf;
+  $("menupdf").href = `/seite?spiel=${encodeURIComponent(id)}&s=1`;
+  $("menusymbols").href = `/symbole?spiel=${encodeURIComponent(id)}`;
+  updateMenuButton();
+  $("deleteform").hidden = true;
+  $("delete").hidden = !canDelete;
+  $("pin").value = "";
+  showIntro(g);
   $("turns").replaceChildren();
   $("status").textContent = "";
-  stopReading();
-  $("intro").hidden = true;
-  $("intro").open = false;
-  if (g.einleitung) loadIntro(id);
-  $("deletestatus").textContent = "";
-  $("deleteform").hidden = true;
-  $("pin").value = "";
   $("examples").hidden = false;
   history = [];
   window.scrollTo(0, 0);
 }
+
+// The menu holds what guests rarely need; hidden when it would be empty.
+function updateMenuButton() {
+  const g = allGames.find((x) => x.id === game);
+  $("menubutton").hidden = !g?.pdf && !canDelete;
+}
+
+function closeMenu() {
+  for (const [button, menu] of MENUS) {
+    $(menu).hidden = true;
+    $(button).setAttribute("aria-expanded", "false");
+  }
+}
+
+const MENUS = [["menubutton", "menu"], ["startmenubutton", "startmenu"]];
+
+for (const [button, menu] of MENUS) {
+  $(button).onclick = () => {
+    const open = $(menu).hidden;
+    $(menu).hidden = !open;
+    $(button).setAttribute("aria-expanded", String(open));
+  };
+}
+document.addEventListener("click", (e) => {
+  for (const [button, menu] of MENUS) {
+    if (!$(menu).hidden && !$(menu).contains(e.target) && e.target !== $(button)) {
+      $(menu).hidden = true;
+      $(button).setAttribute("aria-expanded", "false");
+    }
+  }
+});
+
+// Input fixed at the bottom: keep the last message clear of it.
+new ResizeObserver(([entry]) => {
+  document.documentElement.style.setProperty("--composer", `${entry.target.offsetHeight}px`);
+}).observe($("composer"));
 
 function openGame(id) {
   remember(id);
@@ -282,11 +402,16 @@ $("search").addEventListener("input", renderGames);
 async function showWarming() {
   try {
     const { vorwaermen: w, loeschen, vorlesen } = await (await fetch("/api/status")).json();
-    $("delete").hidden = !loeschen;
+    canDelete = loeschen;
+    $("delete").hidden = !canDelete || !$("deleteform").hidden;
     canSpeak = vorlesen;
-    $("introspeak").hidden = !canSpeak;
+    if (game) {
+      updateMenuButton();
+      $("introspeak").hidden = !canSpeak || !allGames.find((x) => x.id === game)?.einleitung;
+    }
     $("warming").hidden = !w.running;
-    $("warming").textContent = `⏳ Regelhefte werden vorbereitet: ${w.done} von ${w.total} – erste Fragen können etwas länger dauern.`;
+    $("warmbar").style.width = `${w.total ? (100 * w.done) / w.total : 0}%`;
+    $("warmtext").textContent = `Regelhefte werden vorbereitet (${w.done} von ${w.total}) – erste Fragen dauern etwas länger.`;
     if (w.running) setTimeout(showWarming, 10000);
   } catch {}
 }
@@ -314,6 +439,7 @@ $("importform").onsubmit = async (e) => {
       if (job.status === "fertig") {
         $("importstatus").textContent = `✅ Fertig – das Spiel ist jetzt in der Liste.`;
         $("importform").reset();
+        $("startmenu").hidden = true;
         await loadGames();
         openGame(result.game);
         break;
@@ -340,12 +466,16 @@ $("importform").onsubmit = async (e) => {
 $("delete").onclick = () => {
   const g = allGames.find((x) => x.id === game);
   $("deleteform").hidden = false;
+  $("delete").hidden = true;
   $("deletestatus").textContent = `„${g.name}“ wirklich entfernen? Zum Bestätigen die PIN eingeben.`;
   $("pin").focus();
 };
 
 $("deleteform").onsubmit = async (e) => {
   e.preventDefault();
+  const button = $("deleteform").querySelector("button");
+  if (button.disabled) return;
+  button.disabled = true;
   try {
     const response = await fetch(`/api/games/${encodeURIComponent(game)}`,
       { method: "DELETE", headers: { "X-PIN": $("pin").value } });
@@ -356,19 +486,42 @@ $("deleteform").onsubmit = async (e) => {
   } catch (err) {
     $("pin").value = "";
     $("deletestatus").textContent = `❌ ${err.message}`;
+  } finally {
+    button.disabled = false;
   }
 };
 
 // --- Introduction: what the game is about, from its rulebook.
 
-async function loadIntro(id) {
+function showIntro(g) {
+  const text = $("introtext");
+  text.textContent = g.einleitung || "Noch keine Beschreibung – frag einfach los.";
+  text.classList.toggle("muted", !g.einleitung);
+  text.classList.add("clamp");
+  $("introspeak").hidden = !g.einleitung || !canSpeak;
+  $("intromore").textContent = "mehr";
+  if (!g.einleitung) refreshIntro(g.id);
+  // "mehr" only when three lines don't show it all.
+  requestAnimationFrame(() => { $("intromore").hidden = text.scrollHeight <= text.clientHeight + 2; });
+}
+
+// The server writes missing introductions in the background (about a minute
+// after an import); the list on this page may be older.
+async function refreshIntro(id) {
   try {
-    const response = await fetch(`/api/games/${encodeURIComponent(id)}/einleitung`);
-    if (!response.ok || game !== id) return;
-    $("introtext").textContent = (await response.json()).text;
-    $("intro").hidden = false;
+    const fresh = (await (await fetch("/api/games")).json()).find((x) => x.id === id);
+    const g = allGames.find((x) => x.id === id);
+    if (fresh?.einleitung && g && game === id) {
+      g.einleitung = fresh.einleitung;
+      showIntro(g);
+    }
   } catch {}
 }
+
+$("intromore").onclick = () => {
+  const short = $("introtext").classList.toggle("clamp");
+  $("intromore").textContent = short ? "mehr" : "weniger";
+};
 
 $("introspeak").onclick = () => readAloud($("introtext").textContent, $("introspeak"));
 
@@ -377,6 +530,7 @@ $("introspeak").onclick = () => readAloud($("introtext").textContent, $("introsp
 // only play sound started by a tap, and the AudioContext is created in it.
 
 let canSpeak = false;
+let canDelete = false;  // a PIN is set on the server
 let player = null;  // { ctx, button } while something is read
 
 function addSpeakButton(turn) {
@@ -385,7 +539,7 @@ function addSpeakButton(turn) {
   b.className = "speak";
   b.textContent = "🔊 Vorlesen";
   b.onclick = () => readAloud(turn.querySelector(".answer").textContent, b);
-  turn.querySelector(".quote").before(b);
+  turn.querySelector(".actions").prepend(b);
 }
 
 // First piece one sentence (quick start), then sentences joined up to ~250 characters.
@@ -550,21 +704,25 @@ async function transcribe(blob) {
 
 async function ask(question) {
   busy = true;
+  $("status").textContent = "";
   $("examples").hidden = true;
   $("askform").querySelector("button").disabled = true;
   const turn = document.createElement("div");
   turn.className = "turn";
-  turn.innerHTML = '<p class="question"></p><p class="answer"></p><div class="quote" hidden></div>';
-  turn.querySelector(".question").textContent = question;
-  $("turns").prepend(turn);
+  turn.innerHTML = '<p class="msg me"></p><div class="msg bear"><p class="answer waiting"></p>'
+    + '<div class="quote" hidden></div><div class="actions"></div></div>';
+  turn.querySelector(".me").textContent = question;
+  $("turns").append(turn);
+  turn.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // The first question to a game reads the whole rulebook and takes longer.
+  const answer = turn.querySelector(".answer");
   const started = Date.now();
+  answer.textContent = "Blättere im Regelheft …";
   const waiting = setInterval(() => {
     const s = Math.round((Date.now() - started) / 1000);
-    $("status").textContent = `Blättere im Regelheft … ${s} s` + (s >= 8 ? " – beim ersten Mal dauert es länger" : "");
+    answer.textContent = `Blättere im Regelheft … ${s} s` + (s >= 8 ? " – beim ersten Mal dauert es länger" : "");
   }, 1000);
-  $("status").textContent = "Blättere im Regelheft …";
   try {
     const response = await fetch("/api/ask", {
       method: "POST",
@@ -579,14 +737,19 @@ async function ask(question) {
       if (done) break;
       full += decoder.decode(value, { stream: true });
       clearInterval(waiting);
-      $("status").textContent = "";
+      answer.classList.remove("waiting");
       show(turn, full);
     }
+    if (!full.trim()) throw new Error("leer");
     history = [...history, { question, answer: full }].slice(-2);
     addSpeakButton(turn);
     linkSource(turn, full);
   } catch {
-    $("status").textContent = "Keine Antwort erhalten – bitte nochmal versuchen.";
+    if (answer.classList.contains("waiting")) {
+      answer.textContent = "Keine Antwort erhalten – bitte nochmal versuchen.";
+    } else {
+      $("status").textContent = "Die Antwort brach ab – bitte nochmal versuchen.";
+    }
   } finally {
     clearInterval(waiting);
     busy = false;
@@ -607,8 +770,8 @@ async function linkSource(turn, text) {
     a.href = "/seite?" + new URLSearchParams({ spiel: game, s: page, q: match[1] });
     a.target = "_blank";
     a.rel = "noopener";
-    a.textContent = `📄 Im Regelheft nachlesen (S. ${page})`;
-    turn.append(a);
+    a.textContent = `📄 Seite ${page} ansehen`;
+    turn.querySelector(".actions").append(a);
   } catch {}
 }
 

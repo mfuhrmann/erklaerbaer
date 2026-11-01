@@ -34,8 +34,8 @@ enthält (→ pymupdf4llm) oder nur Bilder (→ Texterkennung) und nimmt das Spi
 Neustart auf. Dauer: Sekunden bis wenige Minuten. Kein Passwortschutz –
 jeder im WLAN kann importieren.
 
-**Spiel entfernen:** im Spiel ganz unten „🗑️ Spiel entfernen“, dann die PIN
-eingeben. Der Knopf erscheint nur, wenn `ERKLAERBAER_PIN` gesetzt ist. Nach 5
+**Spiel entfernen:** im Spiel oben rechts das Menü ⋯ öffnen, „🗑️ Spiel
+entfernen“ wählen, dann die PIN eingeben. Der Knopf erscheint nur, wenn `ERKLAERBAER_PIN` gesetzt ist. Nach 5
 falschen PINs ist Löschen 5 Minuten gesperrt. Die App verschiebt die Dateien
 nach `regelwerke/.papierkorb/<id>-<zeit>/`. Zurückholen: Dateien zurück nach
 `regelwerke/` verschieben, `docker compose restart erklaerbaer`.
@@ -127,7 +127,7 @@ Handy/Browser ──► erklaerbaer (FastAPI, :8090)
   PDF-Betrachter.
 - **Whisper** bekommt pro Spiel ein Vokabular aus dem Regelheft (Überschriften,
   Namen), damit es Begriffe wie „Marshal“ richtig erkennt.
-- **Vorlesen:** „🔊 Vorlesen“ unter jeder Antwort und im Kasten „📜 Worum
+- **Vorlesen:** „🔊 Vorlesen“ unter jeder Antwort und in der Nachricht „🐻 Worum
   geht's?“. Piper rechnet die Sprache auf der CPU (Stimme `de_DE-thorsten-high`:
   1,4 s für 15 s Sprache, gemessen auf dem Laptop). Die Seite holt Satz für Satz,
   der erste Satz kommt nach ~0,4 s. Andere Stimme: `STIMME` in `.env`.

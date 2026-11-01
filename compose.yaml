@@ -78,7 +78,9 @@ services:
         set -e; cd /models;
         voice=$$STIMME; speaker=$${voice#*-}; quality=$${speaker#*-}; speaker=$${speaker%-*};
         url=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/$$speaker/$$quality;
-        for ext in onnx onnx.json; do test -f $$voice.$$ext || curl -fL -o $$voice.$$ext $$url/$$voice.$$ext; done
+        for ext in onnx onnx.json; do
+        test -f $$voice.$$ext || { curl -fL -o $$voice.$$ext.part $$url/$$voice.$$ext && mv $$voice.$$ext.part $$voice.$$ext; } || echo "Stimme fehlt: Vorlesen ist aus";
+        done
     restart: "no"
 
   whisper:
